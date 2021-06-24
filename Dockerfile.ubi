@@ -1,0 +1,12 @@
+FROM quay.io/konveyor/builder:latest AS builder
+ENV GOPATH=$APP_ROOT
+COPY . $APP_ROOT/src/velero-plugin-for-csi
+WORKDIR $APP_ROOT/src/velero-plugin-for-csi
+RUN CGO_ENABLED=0 GOOS=linux go build -v -o $APP_ROOT/bin/velero-plugin-for-csi -mod=mod .
+
+
+FROM registry.access.redhat.com/ubi8-minimal
+RUN mkdir /plugins
+COPY --from=builder /opt/app-root/bin/velero-plugin-for-csi /plugins/
+USER 65534:65534
+ENTRYPOINT ["/bin/bash", "-c", "cp /plugins/* /target/."]
