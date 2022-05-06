@@ -3,10 +3,10 @@ module github.com/vmware-tanzu/velero-plugin-for-csi
 go 1.13
 
 require (
-	github.com/hashicorp/go-hclog v0.12.0 // indirect
+	github.com/hashicorp/go-hclog v1.2.0 // indirect
 	github.com/hashicorp/go-plugin v1.0.1-0.20190610192547-a1bc61569a26 // indirect
 	github.com/hashicorp/yamux v0.0.0-20181012175058-2f1d1f20f75d // indirect
-	github.com/konveyor/volume-snapshot-mover v0.0.0-20220422152145-ec998c3f9575
+	github.com/konveyor/volume-snapshot-mover v0.0.0-20220505155018-e76ece43e8f9
 	github.com/kubernetes-csi/external-snapshotter/client/v4 v4.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.8.1

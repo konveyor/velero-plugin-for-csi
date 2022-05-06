@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// DataMoverBackupBackupItemAction is a backup item action plugin to backup
+// DataMoverBackupItemAction is a backup item action plugin to backup
 // DataMoverBackup objects using Velero
 type DataMoverBackupItemAction struct {
 	Log logrus.FieldLogger
