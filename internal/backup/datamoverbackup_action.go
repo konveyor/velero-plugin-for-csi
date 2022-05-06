@@ -47,6 +47,15 @@ func (p *DataMoverBackupItemAction) Execute(item runtime.Unstructured, backup *v
 
 	dmb.Status = *dmbNew.Status.DeepCopy()
 
+	vals := map[string]string{
+		util.DatamoverResticRepository: dmb.Status.ResticRepository,
+		util.DatamoverSourcePVCName:    dmb.Status.SourcePVCData.Name,
+		util.DatamoverSourcePVCSize:    dmb.Status.SourcePVCData.Size,
+	}
+
+	//Add all the relevant status info as annotations because velero strips status subresource for CRDs
+	util.AddAnnotations(&dmb.ObjectMeta, vals)
+	
 	dmbMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&dmb)
 	if err != nil {
 		return nil, nil, errors.WithStack(err)

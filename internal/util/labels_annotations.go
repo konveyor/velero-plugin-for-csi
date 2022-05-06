@@ -35,4 +35,9 @@ const (
 	// CSI Labels volumesnapshotcontents
 	PrefixedSnapshotterSecretNameKey      = "csi.storage.k8s.io/snapshotter-secret-name"
 	PrefixedSnapshotterSecretNamespaceKey = "csi.storage.k8s.io/snapshotter-secret-namespace"
+
+	// Datamover annotation keys
+	DatamoverResticRepository = "datamover.io/restic-repository"
+	DatamoverSourcePVCName    = "datamover.io/source-pvc-name"
+	DatamoverSourcePVCSize    = "datamover.io/source-pvc-size"
 )
