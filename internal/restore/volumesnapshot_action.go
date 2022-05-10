@@ -29,6 +29,7 @@ import (
 	snapshotv1beta1api "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1beta1"
 	core_v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/vmware-tanzu/velero-plugin-for-csi/internal/util"
@@ -79,88 +80,90 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 		return nil, err
 	}
 
-	// TODO: change name
-	dataMoverRestoreName := "dmr-mssql-pvc"
+	dataMoverRestoreName := fmt.Sprintf("dmr-%v", vs.Spec.Source.PersistentVolumeClaimName)
 	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: vs.Namespace, Name: dataMoverRestoreName}, &dmr)
 	if err != nil {
 		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get datamoverrestore %s", dataMoverRestoreName))
 	}
-	p.Log.Infof("DMR found for VSC has been found")
 
 	repDestinationName := fmt.Sprintf("%s-rep-dest", dmr.Name)
 	err = repDestinationClient.Get(context.TODO(), client.ObjectKey{Namespace: dmr.Spec.ProtectedNamespace, Name: repDestinationName}, &repDestination)
 	if err != nil {
 		return nil, err
 	}
-	p.Log.Infof("RepDest has been found for VSC")
 
 	volSyncVSC, err := util.GetVolSyncSnapContent(&repDestination, dmr.Spec.ProtectedNamespace, p.Log)
 	if err != nil {
 		return nil, err
 	}
-	p.Log.Infof("VolSync VSC has been found")
 
 	_, snapClient, err := util.GetClients()
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	snapHandle := volSyncVSC.Status.SnapshotHandle
+	if !util.IsVolumeSnapshotExists(&vs, snapClient.SnapshotV1beta1()) {
+		snapHandle := volSyncVSC.Status.SnapshotHandle
 
-	p.Log.Infof("volSync VSC snap handle %v", *snapHandle)
+		csiDriverName, exists := vs.Annotations[util.CSIDriverNameAnnotation]
+		if !exists {
+			return nil, errors.Errorf("Volumesnapshot %s/%s does not have a %s annotation", vs.Namespace, vs.Name, util.CSIDriverNameAnnotation)
+		}
 
-	csiDriverName, exists := vs.Annotations[util.CSIDriverNameAnnotation]
-	if !exists {
-		return nil, errors.Errorf("Volumesnapshot %s/%s does not have a %s annotation", vs.Namespace, vs.Name, util.CSIDriverNameAnnotation)
-	}
+		deletionPolicy, exists := vs.Annotations[util.CSIVSCDeletionPolicy]
+		if !exists {
+			p.Log.Infof("Volumesnapshot %s/%s does not have a %s annotation using DeletionPolicy Retain for volumesnapshotcontent",
+				vs.Namespace, vs.Name, util.CSIVSCDeletionPolicy)
+			deletionPolicy = string(snapshotv1beta1api.VolumeSnapshotContentRetain)
+		}
 
-	deletionPolicy, exists := vs.Annotations[util.CSIVSCDeletionPolicy]
-	if !exists {
-		p.Log.Infof("Volumesnapshot %s/%s does not have a %s annotation using DeletionPolicy Retain for volumesnapshotcontent",
-			vs.Namespace, vs.Name, util.CSIVSCDeletionPolicy)
-		deletionPolicy = string(snapshotv1beta1api.VolumeSnapshotContentRetain)
-	}
-
-	vsc := snapshotv1beta1api.VolumeSnapshotContent{
-		ObjectMeta: metav1.ObjectMeta{
-			// TODO: change name
-			Name: "VSC-DM-test",
-			Labels: map[string]string{
-				velerov1api.RestoreNameLabel: label.GetValidName(input.Restore.Name),
+		vsc := snapshotv1beta1api.VolumeSnapshotContent{
+			ObjectMeta: metav1.ObjectMeta{
+				// TODO: change name
+				Name: "vsc-dmr",
+				Labels: map[string]string{
+					velerov1api.RestoreNameLabel: label.GetValidName(input.Restore.Name),
+				},
 			},
-		},
-		Spec: snapshotv1beta1api.VolumeSnapshotContentSpec{
-			DeletionPolicy: snapshotv1beta1api.DeletionPolicy(deletionPolicy),
-			Driver:         csiDriverName,
-			VolumeSnapshotRef: core_v1.ObjectReference{
-				// use VolSync VS for ref
-				Kind:      "VolumeSnapshot",
-				Namespace: dmr.Spec.ProtectedNamespace,
-				Name:      repDestination.Status.LatestImage.Name,
+			Spec: snapshotv1beta1api.VolumeSnapshotContentSpec{
+				DeletionPolicy: snapshotv1beta1api.DeletionPolicy(deletionPolicy),
+				Driver:         csiDriverName,
+				VolumeSnapshotRef: core_v1.ObjectReference{
+					Kind:      "VolumeSnapshot",
+					Namespace: vs.Namespace,
+					Name:      vs.Name,
+				},
+				Source: snapshotv1beta1api.VolumeSnapshotContentSource{
+					SnapshotHandle: snapHandle,
+				},
 			},
-			Source: snapshotv1beta1api.VolumeSnapshotContentSource{
-				SnapshotHandle: snapHandle,
-			},
-		},
-	}
+		}
 
-	// we create the volumesnapshotcontent here instead of relying on the restore flow because we want to statically
-	// bind this volumesnapshot with a volumesnapshotcontent that will be used as its source for pre-populating the
-	// volume that will be created as a result of the restore. To perform this static binding, a bi-didrectional link
-	// between the volumesnapshotcontent and volumesnapshot objects have to be setup.
-	// Further, it is disallowed to convert a dynamically created volumesnapshotcontent for static binding.
-	// See: https://github.com/kubernetes-csi/external-snapshotter/issues/274
-	vscupd, err := snapClient.SnapshotV1beta1().VolumeSnapshotContents().Create(context.TODO(), &vsc, metav1.CreateOptions{})
+		// we create the volumesnapshotcontent here instead of relying on the restore flow because we want to statically
+		// bind this volumesnapshot with a volumesnapshotcontent that will be used as its source for pre-populating the
+		// volume that will be created as a result of the restore. To perform this static binding, a bi-didrectional link
+		// between the volumesnapshotcontent and volumesnapshot objects have to be setup.
+		// Further, it is disallowed to convert a dynamically created volumesnapshotcontent for static binding.
+		// See: https://github.com/kubernetes-csi/external-snapshotter/issues/274
+		vscupd, err := snapClient.SnapshotV1beta1().VolumeSnapshotContents().Create(context.TODO(), &vsc, metav1.CreateOptions{})
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create volumesnapshotcontents %s", vsc.GenerateName)
+		}
+		p.Log.Infof("Created VolumesnapshotContents %s with static binding to volumesnapshot %s/%s", vscupd, dmr.Spec.ProtectedNamespace, repDestination.Status.LatestImage.Name)
+
+		// Reset Spec to convert the volumesnapshot from using the dyanamic volumesnapshotcontent to the static one.
+		resetVolumeSnapshotSpecForRestore(&vs, &vscupd.Name)
+	}
+	vsMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&vs)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create volumesnapshotcontents %s", vsc.GenerateName)
+		return nil, errors.WithStack(err)
 	}
-	p.Log.Infof("Created VolumesnapshotContents %s with static binding to volumesnapshot %s/%s", vscupd, dmr.Spec.ProtectedNamespace, repDestination.Status.LatestImage.Name)
-
-	// Reset Spec to convert the volumesnapshot from using the dyanamic volumesnapshotcontent to the static one.
-	resetVolumeSnapshotSpecForRestore(&vs, &vscupd.Name)
 
 	p.Log.Infof("Returning from VolumeSnapshotRestoreItemAction with no additionalItems")
 
 	// do not restore velero VS as we are using a VolSync VS
-	return &velero.RestoreItemActionExecuteOutput{}, nil
+	return &velero.RestoreItemActionExecuteOutput{
+		UpdatedItem:     &unstructured.Unstructured{Object: vsMap},
+		AdditionalItems: []velero.ResourceIdentifier{},
+	}, nil
 }

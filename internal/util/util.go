@@ -244,14 +244,12 @@ func GetVolSyncSnapContent(repDest *volsyncv1alpha1.ReplicationDestination, prot
 	snapShotClient := snapClient.SnapshotV1beta1()
 
 	volSyncVolSnapshotName := repDest.Status.LatestImage.Name
-	log.Infof("volSync snapshot name: %v", volSyncVolSnapshotName)
 
 	// get volumeSnapshot created by VolSync ReplicationDestination
 	vs, err := snapShotClient.VolumeSnapshots(protectedNS).Get(context.TODO(), volSyncVolSnapshotName, metav1.GetOptions{})
 	if err != nil {
 		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshot %s", volSyncVolSnapshotName))
 	}
-	log.Infof("VolSync VS has been found here 1")
 
 	// use this VS to get the name of the VSC created by Volsync
 	volSyncSnapContentName := vs.Status.BoundVolumeSnapshotContentName
