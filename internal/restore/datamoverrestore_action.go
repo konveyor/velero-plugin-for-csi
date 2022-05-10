@@ -38,22 +38,16 @@ func (p *DataMoverRestoreItemAction) Execute(input *velero.RestoreItemActionExec
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(input.Item.UnstructuredContent(), &dmb); err != nil {
 		return &velero.RestoreItemActionExecuteOutput{}, errors.Wrapf(err, "failed to convert DMB input.Item from unstructured")
 	}
-	p.Log.Infof("[dmb-restore] dmb: %s", dmb.Name)
-	p.Log.Infof("[dmb-restore-status]: %s", dmb.Status.SourcePVCData.Size)
-
-	p.Log.Infof("DMB 1: %v", dmb)
-
-	p.Log.Infof("DMB 2: %v", input.Item)
 
 	datamoverClient, err := util.GetDatamoverClient()
 	if err != nil {
 		return nil, err
 	}
 
-	// create DMR using DMB status fields
+	// create DMR using DMB fields
 	dmr := volumesnapmoverv1alpha1.DataMoverRestore{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprint("dmr-" + dmb.Status.SourcePVCData.Name),
+			Name:      fmt.Sprint("dmr-" + dmb.Annotations[util.DatamoverSourcePVCName]),
 			Namespace: dmb.Namespace,
 		},
 		Spec: volumesnapmoverv1alpha1.DataMoverRestoreSpec{
@@ -62,11 +56,12 @@ func (p *DataMoverRestoreItemAction) Execute(input *velero.RestoreItemActionExec
 			},
 			DataMoverBackupref: volumesnapmoverv1alpha1.DMBRef{
 				BackedUpPVCData: volumesnapmoverv1alpha1.PVCData{
-					Name: dmb.Status.SourcePVCData.Name,
-					Size: dmb.Status.SourcePVCData.Size,
+					Name: dmb.Annotations[util.DatamoverSourcePVCName],
+					Size: dmb.Annotations[util.DatamoverSourcePVCSize],
 				},
-				ResticRepository: dmb.Status.ResticRepository,
+				ResticRepository: dmb.Annotations[util.DatamoverResticRepository],
 			},
+			ProtectedNamespace: dmb.Spec.ProtectedNamespace,
 		},
 	}
 
@@ -77,9 +72,17 @@ func (p *DataMoverRestoreItemAction) Execute(input *velero.RestoreItemActionExec
 	p.Log.Infof("[dmb-restore] dmr created: %s", dmr.Name)
 
 	// block until DMR is completed for VolSync VSC handle
+	dataMoverRestoreCompleted, err := util.IsDataMoverRestoreCompleted(dmr.Namespace, dmr.Name, dmr.Spec.ProtectedNamespace, p.Log)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
 
-	// get this VSC handle (put in util file)
+	if !dataMoverRestoreCompleted {
+		return nil, errors.New("datamoverRestore never completed")
+	}
 
-	// returning empty output as to not restore the DMB
+	p.Log.Infof("[dmb-restore] DMR completed completed: %s", dmr.Name)
+
+	// returning empty output so we do not restore DMB
 	return &velero.RestoreItemActionExecuteOutput{}, nil
 }

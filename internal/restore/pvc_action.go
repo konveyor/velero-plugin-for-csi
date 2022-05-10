@@ -20,13 +20,15 @@ import (
 	"context"
 	"fmt"
 
+	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	volumesnapmoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	snapshotv1beta1api "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1beta1"
 	corev1api "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -66,15 +68,18 @@ func removePVCAnnotations(pvc *corev1api.PersistentVolumeClaim, remove []string)
 	}
 }
 
-func resetPVCSpec(pvc *corev1api.PersistentVolumeClaim, vsName string) {
+func resetPVCSpec(pvc *corev1api.PersistentVolumeClaim, vsName string) error {
+
 	// Restore operation for the PVC will use the volumesnapshot as the data source.
 	// So clear out the volume name, which is a ref to the PV
 	pvc.Spec.VolumeName = ""
 	pvc.Spec.DataSource = &corev1api.TypedLocalObjectReference{
 		APIGroup: &snapshotv1beta1api.SchemeGroupVersion.Group,
 		Kind:     "VolumeSnapshot",
-		Name:     vsName,
+		// use VolSync VS
+		Name: vsName,
 	}
+	return nil
 }
 
 func setPVCStorageResourceRequest(pvc *corev1api.PersistentVolumeClaim, restoreSize resource.Quantity, log logrus.FieldLogger) {
@@ -110,38 +115,45 @@ func (p *PVCRestoreItemAction) Execute(input *velero.RestoreItemActionExecuteInp
 		pvc.SetNamespace(val)
 	}
 
-	volumeSnapshotName, ok := pvc.Annotations[util.VolumeSnapshotLabel]
-	if !ok {
-		p.Log.Infof("Skipping PVCRestoreItemAction for PVC %s/%s, PVC does not have a CSI volumesnapshot.", pvc.Namespace, pvc.Name)
-		return &velero.RestoreItemActionExecuteOutput{
-			UpdatedItem: input.Item,
-		}, nil
-	}
-
-	_, snapClient, err := util.GetClients()
+	dmr := volumesnapmoverv1alpha1.DataMoverRestore{}
+	datamoverClient, err := util.GetDatamoverClient()
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 
-	vs, err := snapClient.SnapshotV1beta1().VolumeSnapshots(pvc.Namespace).Get(context.TODO(), volumeSnapshotName, metav1.GetOptions{})
+	dataMoverRestoreName := fmt.Sprintf("dmr-" + pvc.Name)
+	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: pvc.Namespace, Name: dataMoverRestoreName}, &dmr)
 	if err != nil {
-		return nil, errors.Wrapf(err, fmt.Sprintf("Failed to get Volumesnapshot %s/%s to restore PVC %s/%s", pvc.Namespace, volumeSnapshotName, pvc.Namespace, pvc.Name))
+		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get datamoverrestore %s", dataMoverRestoreName))
+	}
+	p.Log.Infof("Got DMR for PVC restore %s", dmr.Name)
+
+	repDestination := volsyncv1alpha1.ReplicationDestination{}
+	repDestinationClient, err := util.GetReplicationDestinationClient()
+	if err != nil {
+		return nil, err
 	}
 
-	if _, exists := vs.Annotations[util.VolumeSnapshotRestoreSize]; exists {
-		restoreSize, err := resource.ParseQuantity(vs.Annotations[util.VolumeSnapshotRestoreSize])
-		if err != nil {
-			return nil, errors.Wrapf(err, fmt.Sprintf("Failed to parse %s from annotation on Volumesnapshot %s/%s into restore size",
-				vs.Annotations[util.VolumeSnapshotRestoreSize], vs.Namespace, vs.Name))
-		}
-		// It is possible that the volume provider allocated a larger capacity volume than what was requested in the backed up PVC.
-		// In this scenario the volumesnapshot of the PVC will endup being larger than its requested storage size.
-		// Such a PVC, on restore as-is, will be stuck attempting to use a Volumesnapshot as a data source for a PVC that
-		// is not large enough.
-		// To counter that, here we set the storage request on the PVC to the larger of the PVC's storage request and the size of the
-		// VolumeSnapshot
-		setPVCStorageResourceRequest(&pvc, restoreSize, p.Log)
+	// TODO: change this name
+	err = repDestinationClient.Get(context.TODO(), client.ObjectKey{Namespace: dmr.Spec.ProtectedNamespace, Name: "dmr-mssql-pvc-rep-dest"}, &repDestination)
+	if err != nil {
+		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get repDest for PVC %s", "dmr-mssql-pvc-rep-dest"))
 	}
+	p.Log.Infof("Got RepDest for PVC restore %s", repDestination.Name)
+
+	// use VolSync VS
+	volumeSnapshotName := repDestination.Status.LatestImage.Name
+
+	stringRestoreSize := dmr.Spec.DataMoverBackupref.BackedUpPVCData.Size
+	restoreSize := resource.MustParse(stringRestoreSize)
+
+	// It is possible that the volume provider allocated a larger capacity volume than what was requested in the backed up PVC.
+	// In this scenario the volumesnapshot of the PVC will endup being larger than its requested storage size.
+	// Such a PVC, on restore as-is, will be stuck attempting to use a Volumesnapshot as a data source for a PVC that
+	// is not large enough.
+	// To counter that, here we set the storage request on the PVC to the larger of the PVC's storage request and the size of the
+	// VolumeSnapshot
+	setPVCStorageResourceRequest(&pvc, restoreSize, p.Log)
 
 	resetPVCSpec(&pvc, volumeSnapshotName)
 
