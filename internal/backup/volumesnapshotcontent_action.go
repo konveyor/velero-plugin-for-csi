@@ -72,15 +72,24 @@ func (p *VolumeSnapshotContentBackupItemAction) Execute(item runtime.Unstructure
 		},
 	}
 
-	dmbClient, err := util.GetDatamoverClient()
-
-	err = dmbClient.Create(context.Background(), &dmb)
-
+	// check if datamoverbackup CR exists for VSC
+	DMBExists, err := util.DoesDataMoverBackupExistForVSC(&snapCont, p.Log)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "error creating datamoverbackup CR")
+		return nil, nil, errors.WithStack(err)
 	}
 
-	p.Log.Infof("Created datamoverbackup %s", fmt.Sprintf("%s/%s", dmb.Namespace, dmb.Name))
+	// Create DMB only if does not exist for the VSC
+	if !DMBExists {
+		dmbClient, err := util.GetDatamoverClient()
+
+		err = dmbClient.Create(context.Background(), &dmb)
+
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "error creating datamoverbackup CR")
+		}
+
+		p.Log.Infof("Created datamoverbackup %s", fmt.Sprintf("%s/%s", dmb.Namespace, dmb.Name))
+	}
 
 	additionalItems := []velero.ResourceIdentifier{}
 

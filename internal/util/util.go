@@ -157,7 +157,6 @@ func GetDataMoverbackupWithCompletedStatus(datamoverbackupNS string, datamoverba
 
 	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
 		err := datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: datamoverbackupNS, Name: datamoverbackupName}, &dmb)
-		log.Infof("Inside GetDataMoverbackupWithCompletedStatus, Fetched DMB: %v ", dmb)
 		if err != nil {
 			return false, errors.Wrapf(err, fmt.Sprintf("failed to get datamoverbackup %s/%s", datamoverbackupNS, datamoverbackupName))
 		}
@@ -179,6 +178,26 @@ func GetDataMoverbackupWithCompletedStatus(datamoverbackupNS string, datamoverba
 	}
 	log.Infof("Return DMB from GetDataMoverbackupWithCompletedStatus: %v", dmb)
 	return dmb, nil
+}
+
+// Check if datamoverbackup CR exists for a given volumesnapshotcontent
+func DoesDataMoverBackupExistForVSC(volSnap *snapshotv1beta1api.VolumeSnapshotContent, log logrus.FieldLogger) (bool, error) {
+	datamoverClient, err := GetDatamoverClient()
+	if err != nil {
+		return false, err
+	}
+	dmb := volumesnapmoverv1alpha1.DataMoverBackup{}
+
+	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volSnap.Namespace, Name: fmt.Sprint("dmb-" + volSnap.Spec.VolumeSnapshotRef.Name)}, &dmb)
+	if err != nil {
+		return false, err
+	}
+
+	if len(dmb.Spec.VolumeSnapshotContent.Name) > 0 && dmb.Spec.VolumeSnapshotContent.Name == volSnap.Name {
+		return true, nil
+	}
+
+	return false, err
 }
 
 // block until replicationDestination is completed to get VSC from object store
