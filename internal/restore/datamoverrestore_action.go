@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	volumesnapmoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
+	datamoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/velero-plugin-for-csi/internal/util"
@@ -14,29 +14,29 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// DataMoverRestoreItemAction is a restore item action plugin to retrieve
-// DataMoverBackup from backup and create DataMoverRestore
-type DataMoverRestoreItemAction struct {
+// VolumeSnapshotRestoreRestoreItemAction is a restore item action plugin to retrieve
+// VolumeSnapshotBackup from backup and create VolumeSnapshotRestore
+type VolumeSnapshotRestoreRestoreItemAction struct {
 	Log logrus.FieldLogger
 }
 
-// AppliesTo returns information indicating that the DataMoverRestoreItemAction should be invoked
-func (p *DataMoverRestoreItemAction) AppliesTo() (velero.ResourceSelector, error) {
-	p.Log.Info("DataMoverRestoreItemAction AppliesTo")
+// AppliesTo returns information indicating that the VolumeSnapshotRestoreRestoreItemAction should be invoked
+func (p *VolumeSnapshotRestoreRestoreItemAction) AppliesTo() (velero.ResourceSelector, error) {
+	p.Log.Info("VolumeSnapshotRestoreRestoreItemAction AppliesTo")
 
 	return velero.ResourceSelector{
-		IncludedResources: []string{"datamoverbackups.pvc.oadp.openshift.io"},
+		IncludedResources: []string{"volumesnapshotbackups.datamover.oadp.openshift.io"},
 	}, nil
 }
 
 // Execute backs up a DataMoverBackup object with a completely filled status
-func (p *DataMoverRestoreItemAction) Execute(input *velero.RestoreItemActionExecuteInput) (*velero.RestoreItemActionExecuteOutput, error) {
-	p.Log.Infof("Executing DataMoverRestoreItemAction")
+func (p *VolumeSnapshotRestoreRestoreItemAction) Execute(input *velero.RestoreItemActionExecuteInput) (*velero.RestoreItemActionExecuteOutput, error) {
+	p.Log.Infof("Executing VolumeSnapshotRestoreRestoreItemAction")
 	p.Log.Infof("Executing on item: %v", input.Item)
-	dmb := volumesnapmoverv1alpha1.DataMoverBackup{}
+	vsb := datamoverv1alpha1.VolumeSnapshotBackup{}
 
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(input.Item.UnstructuredContent(), &dmb); err != nil {
-		return &velero.RestoreItemActionExecuteOutput{}, errors.Wrapf(err, "failed to convert DMB input.Item from unstructured")
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(input.Item.UnstructuredContent(), &vsb); err != nil {
+		return &velero.RestoreItemActionExecuteOutput{}, errors.Wrapf(err, "failed to convert VSB input.Item from unstructured")
 	}
 
 	datamoverClient, err := util.GetDatamoverClient()
@@ -44,45 +44,45 @@ func (p *DataMoverRestoreItemAction) Execute(input *velero.RestoreItemActionExec
 		return nil, err
 	}
 
-	// create DMR using DMB fields
-	dmr := volumesnapmoverv1alpha1.DataMoverRestore{
+	// create DMR using VSB fields
+	vsr := datamoverv1alpha1.VolumeSnapshotRestore{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprint("dmr-" + dmb.Annotations[util.DatamoverSourcePVCName]),
-			Namespace: dmb.Namespace,
+			Name:      fmt.Sprint("vsr-" + vsb.Annotations[util.DatamoverSourcePVCName]),
+			Namespace: vsb.Namespace,
 		},
-		Spec: volumesnapmoverv1alpha1.DataMoverRestoreSpec{
+		Spec: datamoverv1alpha1.VolumeSnapshotRestoreSpec{
 			ResticSecretRef: corev1.LocalObjectReference{
 				Name: "restic-secret",
 			},
-			DataMoverBackupref: volumesnapmoverv1alpha1.DMBRef{
-				BackedUpPVCData: volumesnapmoverv1alpha1.PVCData{
-					Name: dmb.Annotations[util.DatamoverSourcePVCName],
-					Size: dmb.Annotations[util.DatamoverSourcePVCSize],
+			DataMoverBackupref: datamoverv1alpha1.DMBRef{
+				BackedUpPVCData: datamoverv1alpha1.PVCData{
+					Name: vsb.Annotations[util.DatamoverSourcePVCName],
+					Size: vsb.Annotations[util.DatamoverSourcePVCSize],
 				},
-				ResticRepository: dmb.Annotations[util.DatamoverResticRepository],
+				ResticRepository: vsb.Annotations[util.DatamoverResticRepository],
 			},
-			ProtectedNamespace: dmb.Spec.ProtectedNamespace,
+			ProtectedNamespace: vsb.Spec.ProtectedNamespace,
 		},
 	}
 
-	err = datamoverClient.Create(context.Background(), &dmr)
+	err = datamoverClient.Create(context.Background(), &vsr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error creating datamoverrestore CR")
+		return nil, errors.Wrapf(err, "error creating volumesnapshotrestore CR")
 	}
-	p.Log.Infof("[dmb-restore] dmr created: %s", dmr.Name)
+	p.Log.Infof("[vsb-restore] dmr created: %s", vsr.Name)
 
 	// block until DMR is completed for VolSync VSC handle
-	dataMoverRestoreCompleted, err := util.IsDataMoverRestoreCompleted(dmr.Namespace, dmr.Name, dmr.Spec.ProtectedNamespace, p.Log)
+	volSnapshotRestoreCompleted, err := util.IsVolumeSnapshotRestoreCompleted(vsr.Namespace, vsr.Name, vsr.Spec.ProtectedNamespace, p.Log)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	if !dataMoverRestoreCompleted {
-		return nil, errors.New("datamoverRestore never completed")
+	if !volSnapshotRestoreCompleted {
+		return nil, errors.New("volumeSnapshotRestore never completed")
 	}
 
-	p.Log.Infof("[dmb-restore] DMR completed completed: %s", dmr.Name)
+	p.Log.Infof("[vsb-restore] VSR completed completed: %s", vsr.Name)
 
-	// returning empty output so we do not restore DMB
+	// returning empty output so we do not restore VSB
 	return &velero.RestoreItemActionExecuteOutput{}, nil
 }

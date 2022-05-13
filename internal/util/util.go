@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
@@ -39,7 +40,7 @@ import (
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
 
-	volumesnapmoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
+	datamoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
 	velerov1api "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	"github.com/vmware-tanzu/velero/pkg/label"
 	"github.com/vmware-tanzu/velero/pkg/restic"
@@ -143,26 +144,26 @@ func GetVolumeSnapshotClassForStorageClass(provisioner string, snapshotClient sn
 	return nil, errors.Errorf("failed to get volumesnapshotclass for provisioner %s, ensure that the desired volumesnapshot class has the %s label", provisioner, VolumeSnapshotClassSelectorLabel)
 }
 
-// Get DataMoverBackup CR with complete status fields
-func GetDataMoverbackupWithCompletedStatus(datamoverbackupNS string, datamoverbackupName string, log logrus.FieldLogger) (volumesnapmoverv1alpha1.DataMoverBackup, error) {
+// Get VolumeSnapshotBackup CR with complete status fields
+func GetVolumeSnapshotbackupWithCompletedStatus(volumeSnapshotbackupNS string, volumeSnapshotName string, log logrus.FieldLogger) (datamoverv1alpha1.VolumeSnapshotBackup, error) {
 
 	timeout := 5 * time.Minute
 	interval := 5 * time.Second
-	dmb := volumesnapmoverv1alpha1.DataMoverBackup{}
+	vsb := datamoverv1alpha1.VolumeSnapshotBackup{}
 
 	datamoverClient, err := GetDatamoverClient()
 	if err != nil {
-		return dmb, err
+		return vsb, err
 	}
 
 	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
-		err := datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: datamoverbackupNS, Name: datamoverbackupName}, &dmb)
+		err := datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volumeSnapshotbackupNS, Name: volumeSnapshotName}, &vsb)
 		if err != nil {
-			return false, errors.Wrapf(err, fmt.Sprintf("failed to get datamoverbackup %s/%s", datamoverbackupNS, datamoverbackupName))
+			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotbackup %s/%s", volumeSnapshotbackupNS, volumeSnapshotName))
 		}
 
-		if len(dmb.Status.Phase) == 0 || dmb.Status.Phase != volumesnapmoverv1alpha1.DatamoverBackupPhaseCompleted {
-			log.Infof("Waiting for datamoverbackup %s/%s to complete. Retrying in %ds", datamoverbackupNS, datamoverbackupName, interval/time.Second)
+		if len(vsb.Status.Phase) == 0 || vsb.Status.Phase != datamoverv1alpha1.DatamoverBackupPhaseCompleted {
+			log.Infof("Waiting for volumesnapshotbackup %s/%s to complete. Retrying in %ds", volumeSnapshotbackupNS, volumeSnapshotName, interval/time.Second)
 			return false, nil
 		}
 
@@ -172,41 +173,46 @@ func GetDataMoverbackupWithCompletedStatus(datamoverbackupNS string, datamoverba
 
 	if err != nil {
 		if err == wait.ErrWaitTimeout {
-			log.Errorf("Timed out awaiting reconciliation of datamoverbackup %s/%s", datamoverbackupNS, datamoverbackupName)
+			log.Errorf("Timed out awaiting reconciliation of volumesnapshotbackup %s/%s", volumeSnapshotbackupNS, volumeSnapshotName)
 		}
-		return dmb, err
+		return vsb, err
 	}
-	log.Infof("Return DMB from GetDataMoverbackupWithCompletedStatus: %v", dmb)
-	return dmb, nil
+	log.Infof("Return VSB from GetVolumeSnapshotbackupWithCompletedStatus: %v", vsb)
+	return vsb, nil
 }
 
-// Check if datamoverbackup CR exists for a given volumesnapshotcontent
-func DoesDataMoverBackupExistForVSC(volSnap *snapshotv1beta1api.VolumeSnapshotContent, log logrus.FieldLogger) (bool, error) {
+// Check if volumesnapshotbackup CR exists for a given volumesnapshotcontent
+func DoesVolumeSnapshotBackupExistForVSC(snapCont *snapshotv1beta1api.VolumeSnapshotContent, log logrus.FieldLogger) (bool, error) {
 	datamoverClient, err := GetDatamoverClient()
 	if err != nil {
 		return false, err
 	}
-	dmb := volumesnapmoverv1alpha1.DataMoverBackup{}
+	vsb := datamoverv1alpha1.VolumeSnapshotBackup{}
 
-	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volSnap.Namespace, Name: fmt.Sprint("dmb-" + volSnap.Spec.VolumeSnapshotRef.Name)}, &dmb)
+	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: snapCont.Spec.VolumeSnapshotRef.Namespace, Name: fmt.Sprint("vsb-" + snapCont.Spec.VolumeSnapshotRef.Name)}, &vsb)
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Infof("could not find volumesnapshotbackup for the given volumesnapshotcontent")
+			return false, nil
+		}
 		return false, err
 	}
 
-	if len(dmb.Spec.VolumeSnapshotContent.Name) > 0 && dmb.Spec.VolumeSnapshotContent.Name == volSnap.Name {
+	if len(vsb.Spec.VolumeSnapshotContent.Name) > 0 && vsb.Spec.VolumeSnapshotContent.Name == snapCont.Name {
+		log.Infof("found volumesnapshotbackup for the given volumesnapshotcontent")
 		return true, nil
 	}
-
+	log.Infof("could not find volumesnapshotbackup for the given volumesnapshotcontent")
 	return false, err
 }
 
 // block until replicationDestination is completed to get VSC from object store
-func IsDataMoverRestoreCompleted(datamoverNS string, dataMoverRestoreName string, protectedNS string, log logrus.FieldLogger) (bool, error) {
+func IsVolumeSnapshotRestoreCompleted(volumeSnapshotNS string, volumeSnapshotRestoreName string, protectedNS string, log logrus.FieldLogger) (bool, error) {
 
 	timeout := 5 * time.Minute
 	interval := 5 * time.Second
 
-	dmr := volumesnapmoverv1alpha1.DataMoverRestore{}
+	vsr := datamoverv1alpha1.VolumeSnapshotRestore{}
 	repDestination := volsyncv1alpha1.ReplicationDestination{}
 
 	datamoverClient, err := GetDatamoverClient()
@@ -220,23 +226,23 @@ func IsDataMoverRestoreCompleted(datamoverNS string, dataMoverRestoreName string
 	}
 
 	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
-		err := datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: datamoverNS, Name: dataMoverRestoreName}, &dmr)
-		log.Infof("Inside IsDataMoverRestoreCompleted, Fetched DMR: %v ", dmr)
+		err := datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volumeSnapshotNS, Name: volumeSnapshotRestoreName}, &vsr)
+		log.Infof("Inside IsVolumeSnapshotRestoreCompleted, Fetched VSR: %v ", vsr)
 		if err != nil {
-			return false, errors.Wrapf(err, fmt.Sprintf("failed to get datamoverrestore %s", dataMoverRestoreName))
+			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestore %s", volumeSnapshotRestoreName))
 		}
 
-		repDestinationName := fmt.Sprintf("%s-rep-dest", dmr.Name)
+		repDestinationName := fmt.Sprintf("%s-rep-dest", vsr.Name)
 		err = repDestinationClient.Get(context.TODO(), client.ObjectKey{Namespace: protectedNS, Name: repDestinationName}, &repDestination)
 		log.Infof("Fetched ReplicationDestination: %v ", repDestination)
 		if err != nil {
 			// TODO: check for err not finding RD, and then other errs
-			log.Infof("Waiting for replicationdestination %s to complete. Retrying in %ds", dataMoverRestoreName, interval/time.Second)
+			log.Infof("Waiting for replicationdestination %s to complete. Retrying in %ds", volumeSnapshotRestoreName, interval/time.Second)
 			return false, nil
 		}
 
 		if repDestination.Status == nil || repDestination.Status.LastSyncTime == nil || repDestination.Spec.Trigger.Manual != repDestination.Status.LastManualSync {
-			log.Infof("Waiting for datamoverrestore %s to complete. Retrying in %ds", dataMoverRestoreName, interval/time.Second)
+			log.Infof("Waiting for VSR %s to complete. Retrying in %ds", volumeSnapshotRestoreName, interval/time.Second)
 			return false, nil
 		}
 
@@ -245,11 +251,11 @@ func IsDataMoverRestoreCompleted(datamoverNS string, dataMoverRestoreName string
 
 	if err != nil {
 		if err == wait.ErrWaitTimeout {
-			log.Errorf("Timed out awaiting reconciliation of datamoverrestore %s", dataMoverRestoreName)
+			log.Errorf("Timed out awaiting reconciliation of volumesnapshotrestore %s", volumeSnapshotRestoreName)
 		}
 		return false, err
 	}
-	log.Infof("Return DMR from IsDataMoverRestoreCompleted as true: %v", dmr)
+	log.Infof("Return VSR from IsVolumeSnapshotRestoreCompleted as true: %v", vsr)
 	return true, nil
 }
 
@@ -344,7 +350,7 @@ func GetDatamoverClient() (client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	volumesnapmoverv1alpha1.AddToScheme(client2.Scheme())
+	datamoverv1alpha1.AddToScheme(client2.Scheme())
 
 	return client2, err
 }

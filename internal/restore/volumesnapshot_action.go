@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	volumesnapmoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
+	datamoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -68,7 +68,7 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 	}
 
 	repDestination := volsyncv1alpha1.ReplicationDestination{}
-	dmr := volumesnapmoverv1alpha1.DataMoverRestore{}
+	vsr := datamoverv1alpha1.VolumeSnapshotRestore{}
 
 	datamoverClient, err := util.GetDatamoverClient()
 	if err != nil {
@@ -80,20 +80,19 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 		return nil, err
 	}
 
-	dataMoverRestoreName := fmt.Sprintf("dmr-%v", *vs.Spec.Source.PersistentVolumeClaimName)
-	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: vs.Namespace, Name: dataMoverRestoreName}, &dmr)
+	VSRestoreName := fmt.Sprintf("vsr-%v", *vs.Spec.Source.PersistentVolumeClaimName)
+	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: vs.Namespace, Name: VSRestoreName}, &vsr)
 	if err != nil {
-		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get datamoverrestore %s", dataMoverRestoreName))
+		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestore %s", VSRestoreName))
 	}
-	p.Log.Infof("DMR name in VS: %v", dataMoverRestoreName)
 
-	repDestinationName := fmt.Sprintf("%s-rep-dest", dmr.Name)
-	err = repDestinationClient.Get(context.TODO(), client.ObjectKey{Namespace: dmr.Spec.ProtectedNamespace, Name: repDestinationName}, &repDestination)
+	repDestinationName := fmt.Sprintf("%s-rep-dest", vsr.Name)
+	err = repDestinationClient.Get(context.TODO(), client.ObjectKey{Namespace: vsr.Spec.ProtectedNamespace, Name: repDestinationName}, &repDestination)
 	if err != nil {
 		return nil, err
 	}
 
-	volSyncVSC, err := util.GetVolSyncSnapContent(&repDestination, dmr.Spec.ProtectedNamespace, p.Log)
+	volSyncVSC, err := util.GetVolSyncSnapContent(&repDestination, vsr.Spec.ProtectedNamespace, p.Log)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +120,7 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 		vsc := snapshotv1beta1api.VolumeSnapshotContent{
 			ObjectMeta: metav1.ObjectMeta{
 				// TODO: change name
-				Name: "vsc-dmr",
+				Name: "vsc-vsr",
 				Labels: map[string]string{
 					velerov1api.RestoreNameLabel: label.GetValidName(input.Restore.Name),
 				},
@@ -151,7 +150,7 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 			return nil, errors.Wrapf(err, "failed to create volumesnapshotcontents %s", vsc.Name)
 		}
 		// TODO: change this log
-		p.Log.Infof("Created VolumesnapshotContents %s with static binding to volumesnapshot %s/%s", vscupd, dmr.Spec.ProtectedNamespace, repDestination.Status.LatestImage.Name)
+		p.Log.Infof("Created VolumesnapshotContents %s with static binding to volumesnapshot %s/%s", vscupd, vsr.Spec.ProtectedNamespace, repDestination.Status.LatestImage.Name)
 
 		// Reset Spec to convert the volumesnapshot from using the dyanamic volumesnapshotcontent to the static one.
 		resetVolumeSnapshotSpecForRestore(&vs, &vscupd.Name)
