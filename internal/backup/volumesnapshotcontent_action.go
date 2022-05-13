@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	volumesnapmoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
+	datamoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
 	"github.com/vmware-tanzu/velero-plugin-for-csi/internal/util"
 	velerov1api "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	"github.com/vmware-tanzu/velero/pkg/plugin/velero"
@@ -58,13 +58,13 @@ func (p *VolumeSnapshotContentBackupItemAction) Execute(item runtime.Unstructure
 		return nil, nil, errors.WithStack(err)
 	}
 
-	// craft a  Datamoverbackup object to be created
-	dmb := volumesnapmoverv1alpha1.DataMoverBackup{
+	// craft a  VolumeBackupSnapshot object to be created
+	vsb := datamoverv1alpha1.VolumeSnapshotBackup{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprint("dmb-" + snapCont.Spec.VolumeSnapshotRef.Name),
+			Name:      fmt.Sprint("vsb-" + snapCont.Spec.VolumeSnapshotRef.Name),
 			Namespace: snapCont.Spec.VolumeSnapshotRef.Namespace,
 		},
-		Spec: volumesnapmoverv1alpha1.DataMoverBackupSpec{
+		Spec: datamoverv1alpha1.VolumeSnapshotBackupSpec{
 			VolumeSnapshotContent: corev1api.ObjectReference{
 				Name: snapCont.Name,
 			},
@@ -72,23 +72,23 @@ func (p *VolumeSnapshotContentBackupItemAction) Execute(item runtime.Unstructure
 		},
 	}
 
-	// check if datamoverbackup CR exists for VSC
-	DMBExists, err := util.DoesDataMoverBackupExistForVSC(&snapCont, p.Log)
+	// check if VolumeBackupSnapshot CR exists for VSC
+	VSBExists, err := util.DoesVolumeSnapshotBackupExistForVSC(&snapCont, p.Log)
 	if err != nil {
 		return nil, nil, errors.WithStack(err)
 	}
 
-	// Create DMB only if does not exist for the VSC
-	if !DMBExists {
-		dmbClient, err := util.GetDatamoverClient()
+	// Create VSB only if does not exist for the VSC
+	if !VSBExists {
+		vsbClient, err := util.GetDatamoverClient()
 
-		err = dmbClient.Create(context.Background(), &dmb)
+		err = vsbClient.Create(context.Background(), &vsb)
 
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "error creating datamoverbackup CR")
+			return nil, nil, errors.Wrapf(err, "error creating volumesnapshotbackup CR")
 		}
 
-		p.Log.Infof("Created datamoverbackup %s", fmt.Sprintf("%s/%s", dmb.Namespace, dmb.Name))
+		p.Log.Infof("Created volumesnapshotbackup %s", fmt.Sprintf("%s/%s", vsb.Namespace, vsb.Name))
 	}
 
 	additionalItems := []velero.ResourceIdentifier{}
@@ -103,11 +103,11 @@ func (p *VolumeSnapshotContentBackupItemAction) Execute(item runtime.Unstructure
 		})
 	}
 
-	// adding datamoverbackup instance as an additional item, need to block the plugin execution till DMB CR is recon complete
+	// adding volumesnapshotbackup instance as an additional item, need to block the plugin execution till VSB CR is recon complete
 	additionalItems = append(additionalItems, velero.ResourceIdentifier{
-		GroupResource: schema.GroupResource{Group: "pvc.oadp.openshift.io", Resource: "datamoverbackup"},
-		Name:          dmb.Name,
-		Namespace:     dmb.Namespace,
+		GroupResource: schema.GroupResource{Group: "datamover.oadp.openshift.io", Resource: "volumesnapshotbackup"},
+		Name:          vsb.Name,
+		Namespace:     vsb.Namespace,
 	})
 
 	p.Log.Infof("Additional items in vsc action %v", additionalItems)
