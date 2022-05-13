@@ -1,7 +1,7 @@
 package backup
 
 import (
-	volumesnapmoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
+	datamoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/velero-plugin-for-csi/internal/util"
@@ -11,56 +11,56 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// DataMoverBackupBackupItemAction is a backup item action plugin to backup
-// DataMoverBackup objects using Velero
-type DataMoverBackupItemAction struct {
+// VolumeSnapshotBackupBackupItemAction is a backup item action plugin to backup
+// VolumeSnapshotBackup objects using Velero
+type VolumeSnapshotBackupBackupItemAction struct {
 	Log logrus.FieldLogger
 }
 
-// AppliesTo returns information indicating that the DataMoverBackupBackupItemAction should be invoked to backup DataMoverBackups.
-func (p *DataMoverBackupItemAction) AppliesTo() (velero.ResourceSelector, error) {
-	p.Log.Info("DataMoverBackupItemAction AppliesTo")
+// AppliesTo returns information indicating that the VolumeSnapshotBackupItemAction should be invoked to backup VolumeSnapshotBackups.
+func (p *VolumeSnapshotBackupBackupItemAction) AppliesTo() (velero.ResourceSelector, error) {
+	p.Log.Info("VolumeSnapshotBackupBackupItemAction AppliesTo")
 
 	return velero.ResourceSelector{
-		IncludedResources: []string{"datamoverbackups.pvc.oadp.openshift.io"},
+		IncludedResources: []string{"volumesnapshotbackups.datamover.oadp.openshift.io"},
 	}, nil
 }
 
-// Execute backs up a DataMoverBackup object with a completely filled status
-func (p *DataMoverBackupItemAction) Execute(item runtime.Unstructured, backup *velerov1api.Backup) (runtime.Unstructured, []velero.ResourceIdentifier, error) {
-	p.Log.Infof("Executing DataMoverBackupItemAction")
+// Execute backs up a VolumeSnapshotBackup object with a completely filled status
+func (p *VolumeSnapshotBackupBackupItemAction) Execute(item runtime.Unstructured, backup *velerov1api.Backup) (runtime.Unstructured, []velero.ResourceIdentifier, error) {
+	p.Log.Infof("Executing VolumeSnapshotBackupBackupItemAction")
 	p.Log.Infof("Executing on item: %v", item)
-	dmb := volumesnapmoverv1alpha1.DataMoverBackup{}
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(item.UnstructuredContent(), &dmb); err != nil {
+	vsb := datamoverv1alpha1.VolumeSnapshotBackup{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(item.UnstructuredContent(), &vsb); err != nil {
 		return nil, nil, errors.WithStack(err)
 	}
-	p.Log.Infof("Converted Item to DMB: %v", dmb)
-	dmbNew, err := util.GetDataMoverbackupWithCompletedStatus(dmb.Namespace, dmb.Name, p.Log)
+	p.Log.Infof("Converted Item to VSB: %v", vsb)
+	vsbNew, err := util.GetVolumeSnapshotbackupWithCompletedStatus(vsb.Namespace, vsb.Name, p.Log)
 
 	if err != nil {
 		return nil, nil, errors.WithStack(err)
 	}
 
-	p.Log.Infof("Value of dmbNew is : %v", dmbNew)
+	p.Log.Infof("Value of vsbNew is : %v", vsbNew)
 
-	p.Log.Infof("Value of dmbNew status: %v", dmbNew.Status)
+	p.Log.Infof("Value of vsbNew status: %v", vsbNew.Status)
 
-	dmb.Status = *dmbNew.Status.DeepCopy()
+	vsb.Status = *vsbNew.Status.DeepCopy()
 
 	vals := map[string]string{
-		util.DatamoverResticRepository: dmb.Status.ResticRepository,
-		util.DatamoverSourcePVCName:    dmb.Status.SourcePVCData.Name,
-		util.DatamoverSourcePVCSize:    dmb.Status.SourcePVCData.Size,
+		util.DatamoverResticRepository: vsb.Status.ResticRepository,
+		util.DatamoverSourcePVCName:    vsb.Status.SourcePVCData.Name,
+		util.DatamoverSourcePVCSize:    vsb.Status.SourcePVCData.Size,
 	}
 
 	//Add all the relevant status info as annotations because velero strips status subresource for CRDs
-	util.AddAnnotations(&dmb.ObjectMeta, vals)
-	
-	dmbMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&dmb)
+	util.AddAnnotations(&vsb.ObjectMeta, vals)
+
+	vsbMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&vsb)
 	if err != nil {
 		return nil, nil, errors.WithStack(err)
 	}
 
-	p.Log.Infof("Returning DMB map : %v", dmbMap)
-	return &unstructured.Unstructured{Object: dmbMap}, nil, nil
+	p.Log.Infof("Returning VSB map : %v", vsbMap)
+	return &unstructured.Unstructured{Object: vsbMap}, nil, nil
 }
