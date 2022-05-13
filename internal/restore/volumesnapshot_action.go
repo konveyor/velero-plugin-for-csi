@@ -80,11 +80,12 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 		return nil, err
 	}
 
-	dataMoverRestoreName := fmt.Sprintf("dmr-%v", vs.Spec.Source.PersistentVolumeClaimName)
+	dataMoverRestoreName := fmt.Sprintf("dmr-%v", *vs.Spec.Source.PersistentVolumeClaimName)
 	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: vs.Namespace, Name: dataMoverRestoreName}, &dmr)
 	if err != nil {
 		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get datamoverrestore %s", dataMoverRestoreName))
 	}
+	p.Log.Infof("DMR name in VS: %v", dataMoverRestoreName)
 
 	repDestinationName := fmt.Sprintf("%s-rep-dest", dmr.Name)
 	err = repDestinationClient.Get(context.TODO(), client.ObjectKey{Namespace: dmr.Spec.ProtectedNamespace, Name: repDestinationName}, &repDestination)
@@ -147,8 +148,9 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 		// See: https://github.com/kubernetes-csi/external-snapshotter/issues/274
 		vscupd, err := snapClient.SnapshotV1beta1().VolumeSnapshotContents().Create(context.TODO(), &vsc, metav1.CreateOptions{})
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create volumesnapshotcontents %s", vsc.GenerateName)
+			return nil, errors.Wrapf(err, "failed to create volumesnapshotcontents %s", vsc.Name)
 		}
+		// TODO: change this log
 		p.Log.Infof("Created VolumesnapshotContents %s with static binding to volumesnapshot %s/%s", vscupd, dmr.Spec.ProtectedNamespace, repDestination.Status.LatestImage.Name)
 
 		// Reset Spec to convert the volumesnapshot from using the dyanamic volumesnapshotcontent to the static one.
