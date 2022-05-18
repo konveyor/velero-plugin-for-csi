@@ -58,6 +58,22 @@ func (p *VolumeSnapshotContentBackupItemAction) Execute(item runtime.Unstructure
 		return nil, nil, errors.WithStack(err)
 	}
 
+	_, snapshotClient, err := util.GetClients()
+	if err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
+
+	// Wait for VSC to be in ready state
+	VSCReady, err := util.WaitForVolumeSnapshotContentToBeReady(snapCont, snapshotClient.SnapshotV1beta1(), p.Log)
+
+	if err != nil {
+		return nil, nil, errors.WithStack(err)
+	}
+
+	if !VSCReady {
+		p.Log.Infof("volumesnapshotcontent not in ready state, still continuing with the backup")
+	}
+
 	// craft a  VolumeBackupSnapshot object to be created
 	vsb := datamoverv1alpha1.VolumeSnapshotBackup{
 		ObjectMeta: metav1.ObjectMeta{
