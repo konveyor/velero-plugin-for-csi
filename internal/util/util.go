@@ -146,7 +146,7 @@ func GetVolumeSnapshotClassForStorageClass(provisioner string, snapshotClient sn
 // Get VolumeSnapshotBackup CR with complete status fields
 func GetVolumeSnapshotbackupWithCompletedStatus(volumeSnapshotbackupNS string, volumeSnapshotName string, log logrus.FieldLogger) (datamoverv1alpha1.VolumeSnapshotBackup, error) {
 
-	timeout := 5 * time.Minute
+	timeout := 10 * time.Minute
 	interval := 5 * time.Second
 	vsb := datamoverv1alpha1.VolumeSnapshotBackup{}
 
@@ -203,6 +203,32 @@ func DoesVolumeSnapshotBackupExistForVSC(snapCont *snapshotv1beta1api.VolumeSnap
 	}
 	log.Infof("could not find volumesnapshotbackup for the given volumesnapshotcontent")
 	return false, err
+}
+
+//Waits for volumesnapshotcontent to be in ready state
+func WaitForVolumeSnapshotContentToBeReady(snapCont snapshotv1beta1api.VolumeSnapshotContent, snapshotClient snapshotter.SnapshotV1beta1Interface, log logrus.FieldLogger) (bool, error) {
+	// We'll wait 10m for the VSC to be reconciled polling every 5s
+	timeout := 10 * time.Minute
+	interval := 5 * time.Second
+	err := wait.PollImmediate(interval, timeout, func() (bool, error) {
+		updatedVSC, err := snapshotClient.VolumeSnapshotContents().Get(context.TODO(), snapCont.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotcontent %s", updatedVSC.Name))
+		}
+		if updatedVSC.Status == nil || updatedVSC.Status.SnapshotHandle == nil || *updatedVSC.Status.ReadyToUse != true {
+			log.Infof("Waiting for volumesnapshotcontents %s to have snapshot handle and be ready. Retrying in %ds", snapCont.Name, interval/time.Second)
+			return false, nil
+		}
+
+		return true, nil
+	})
+	if err != nil {
+		if err == wait.ErrWaitTimeout {
+			log.Errorf("Timed out awaiting reconciliation of volumesnapshotcontent %s", snapCont.Name)
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // GetVolumeSnapshotContentForVolumeSnapshot returns the volumesnapshotcontent object associated with the volumesnapshot
