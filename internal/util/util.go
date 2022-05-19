@@ -26,7 +26,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
-	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	snapshotv1beta1api "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1beta1"
 	snapshotterClientSet "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
 	snapshotter "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned/typed/volumesnapshot/v1beta1"
@@ -206,47 +205,31 @@ func DoesVolumeSnapshotBackupExistForVSC(snapCont *snapshotv1beta1api.VolumeSnap
 	return false, err
 }
 
-// block until replicationDestination is completed to get VSC from object store
-func IsVolumeSnapshotRestoreCompleted(volumeSnapshotNS string, volumeSnapshotRestoreName string, protectedNS string, log logrus.FieldLogger) (bool, error) {
+// block until replicationDestination is completed to use that snaphandle
+func GetVolumeSnapshotRestoreWithCompletedStatus(volumeSnapshotNS string, volumeSnapshotRestoreName string, protectedNS string, log logrus.FieldLogger) (bool, error) {
 
 	timeout := 5 * time.Minute
 	interval := 5 * time.Second
 
 	vsr := datamoverv1alpha1.VolumeSnapshotRestore{}
-	repDestination := volsyncv1alpha1.ReplicationDestination{}
-
 	datamoverClient, err := GetDatamoverClient()
-	if err != nil {
-		return false, err
-	}
-
-	repDestinationClient, err := GetReplicationDestinationClient()
 	if err != nil {
 		return false, err
 	}
 
 	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
 		err := datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volumeSnapshotNS, Name: volumeSnapshotRestoreName}, &vsr)
-		log.Infof("Inside IsVolumeSnapshotRestoreCompleted, Fetched VSR: %v ", vsr)
+		log.Infof("Inside IsVolumeSnapshotRestoreCompleted, Fetched VSR: %v/%v ", volumeSnapshotRestoreName, volumeSnapshotNS)
 		if err != nil {
 			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestore %s", volumeSnapshotRestoreName))
 		}
 
-		repDestinationName := fmt.Sprintf("%s-rep-dest", vsr.Name)
-		err = repDestinationClient.Get(context.TODO(), client.ObjectKey{Namespace: protectedNS, Name: repDestinationName}, &repDestination)
-		log.Infof("Fetched ReplicationDestination: %v ", repDestination)
-		if err != nil {
-			// TODO: check for err not finding RD, and then other errs
-			log.Infof("Waiting for replicationdestination %s to complete. Retrying in %ds", volumeSnapshotRestoreName, interval/time.Second)
-			return false, nil
+		if len(vsr.Status.SnapshotHandle) > 0 && vsr.Status.Completed == true {
+			log.Infof("VSR %v has completed", volumeSnapshotRestoreName)
+			return true, nil
 		}
-
-		if repDestination.Status == nil || repDestination.Status.LastSyncTime == nil || repDestination.Spec.Trigger.Manual != repDestination.Status.LastManualSync {
-			log.Infof("Waiting for VSR %s to complete. Retrying in %ds", volumeSnapshotRestoreName, interval/time.Second)
-			return false, nil
-		}
-
-		return true, nil
+		log.Infof("Waiting for volumesnapshotrestore %s/%s to complete. Retrying in %ds", volumeSnapshotRestoreName, volumeSnapshotNS, interval/time.Second)
+		return false, nil
 	})
 
 	if err != nil {
@@ -257,35 +240,6 @@ func IsVolumeSnapshotRestoreCompleted(volumeSnapshotNS string, volumeSnapshotRes
 	}
 	log.Infof("Return VSR from IsVolumeSnapshotRestoreCompleted as true: %v", vsr)
 	return true, nil
-}
-
-func GetVolSyncSnapContent(repDest *volsyncv1alpha1.ReplicationDestination, protectedNS string, log logrus.FieldLogger) (*snapshotv1beta1api.VolumeSnapshotContent, error) {
-
-	_, snapClient, err := GetClients()
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	snapShotClient := snapClient.SnapshotV1beta1()
-
-	volSyncVolSnapshotName := repDest.Status.LatestImage.Name
-
-	// get volumeSnapshot created by VolSync ReplicationDestination
-	vs, err := snapShotClient.VolumeSnapshots(protectedNS).Get(context.TODO(), volSyncVolSnapshotName, metav1.GetOptions{})
-	if err != nil {
-		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshot %s", volSyncVolSnapshotName))
-	}
-
-	// use this VS to get the name of the VSC created by Volsync
-	volSyncSnapContentName := vs.Status.BoundVolumeSnapshotContentName
-
-	vsc, err := snapShotClient.VolumeSnapshotContents().Get(context.TODO(), *volSyncSnapContentName, metav1.GetOptions{})
-	if err != nil {
-		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotcontent %s for volumesnapshot %s/%s", *vs.Status.BoundVolumeSnapshotContentName, vs.Namespace, vs.Name))
-	}
-
-	log.Infof("VSC from VolSync has been found")
-	return vsc, nil
 }
 
 // GetVolumeSnapshotContentForVolumeSnapshot returns the volumesnapshotcontent object associated with the volumesnapshot
@@ -353,16 +307,6 @@ func GetDatamoverClient() (client.Client, error) {
 	datamoverv1alpha1.AddToScheme(client2.Scheme())
 
 	return client2, err
-}
-
-func GetReplicationDestinationClient() (client.Client, error) {
-	client3, err := client.New(config.GetConfigOrDie(), client.Options{})
-	if err != nil {
-		return nil, err
-	}
-	volsyncv1alpha1.AddToScheme(client3.Scheme())
-
-	return client3, err
 }
 
 func GetClients() (*kubernetes.Clientset, *snapshotterClientSet.Clientset, error) {

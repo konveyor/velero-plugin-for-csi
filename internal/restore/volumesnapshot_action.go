@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 
-	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	datamoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -67,15 +66,8 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 		return &velero.RestoreItemActionExecuteOutput{}, errors.Wrapf(err, "failed to convert input.Item from unstructured")
 	}
 
-	repDestination := volsyncv1alpha1.ReplicationDestination{}
 	vsr := datamoverv1alpha1.VolumeSnapshotRestore{}
-
 	datamoverClient, err := util.GetDatamoverClient()
-	if err != nil {
-		return nil, err
-	}
-
-	repDestinationClient, err := util.GetReplicationDestinationClient()
 	if err != nil {
 		return nil, err
 	}
@@ -83,18 +75,7 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 	VSRestoreName := fmt.Sprintf("vsr-%v", *vs.Spec.Source.PersistentVolumeClaimName)
 	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: vs.Namespace, Name: VSRestoreName}, &vsr)
 	if err != nil {
-		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestore %s", VSRestoreName))
-	}
-
-	repDestinationName := fmt.Sprintf("%s-rep-dest", vsr.Name)
-	err = repDestinationClient.Get(context.TODO(), client.ObjectKey{Namespace: vsr.Spec.ProtectedNamespace, Name: repDestinationName}, &repDestination)
-	if err != nil {
-		return nil, err
-	}
-
-	volSyncVSC, err := util.GetVolSyncSnapContent(&repDestination, vsr.Spec.ProtectedNamespace, p.Log)
-	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestore %s/%s", VSRestoreName, vs.Namespace))
 	}
 
 	_, snapClient, err := util.GetClients()
@@ -103,7 +84,7 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 	}
 
 	if !util.IsVolumeSnapshotExists(&vs, snapClient.SnapshotV1beta1()) {
-		snapHandle := volSyncVSC.Status.SnapshotHandle
+		snapHandle := vsr.Status.SnapshotHandle
 
 		csiDriverName, exists := vs.Annotations[util.CSIDriverNameAnnotation]
 		if !exists {
@@ -119,8 +100,7 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 
 		vsc := snapshotv1beta1api.VolumeSnapshotContent{
 			ObjectMeta: metav1.ObjectMeta{
-				// TODO: change name
-				Name: "vsc-vsr",
+				Name: fmt.Sprint("vsr-vsc-" + vsr.Spec.DataMoverBackupref.BackedUpPVCData.Name),
 				Labels: map[string]string{
 					velerov1api.RestoreNameLabel: label.GetValidName(input.Restore.Name),
 				},
@@ -134,7 +114,7 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 					Name:      vs.Name,
 				},
 				Source: snapshotv1beta1api.VolumeSnapshotContentSource{
-					SnapshotHandle: snapHandle,
+					SnapshotHandle: &snapHandle,
 				},
 			},
 		}
@@ -149,8 +129,8 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create volumesnapshotcontents %s", vsc.Name)
 		}
-		// TODO: change this log
-		p.Log.Infof("Created VolumesnapshotContents %s with static binding to volumesnapshot %s/%s", vscupd, vsr.Spec.ProtectedNamespace, repDestination.Status.LatestImage.Name)
+
+		p.Log.Infof("Created VolumesnapshotContents %s with static binding to volumesnapshot", vscupd)
 
 		// Reset Spec to convert the volumesnapshot from using the dyanamic volumesnapshotcontent to the static one.
 		resetVolumeSnapshotSpecForRestore(&vs, &vscupd.Name)

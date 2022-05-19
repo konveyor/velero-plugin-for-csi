@@ -44,7 +44,7 @@ func (p *VolumeSnapshotRestoreRestoreItemAction) Execute(input *velero.RestoreIt
 		return nil, err
 	}
 
-	// create DMR using VSB fields
+	// create VSR
 	vsr := datamoverv1alpha1.VolumeSnapshotRestore{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprint("vsr-" + vsb.Annotations[util.DatamoverSourcePVCName]),
@@ -69,19 +69,19 @@ func (p *VolumeSnapshotRestoreRestoreItemAction) Execute(input *velero.RestoreIt
 	if err != nil {
 		return nil, errors.Wrapf(err, "error creating volumesnapshotrestore CR")
 	}
-	p.Log.Infof("[vsb-restore] dmr created: %s", vsr.Name)
+	p.Log.Infof("[vsb-restore] vsr created: %s", vsr.Name)
 
-	// block until DMR is completed for VolSync VSC handle
-	volSnapshotRestoreCompleted, err := util.IsVolumeSnapshotRestoreCompleted(vsr.Namespace, vsr.Name, vsr.Spec.ProtectedNamespace, p.Log)
+	// block until VSR is completed for VolSync VSC handle
+	volSnapshotRestoreCompleted, err := util.GetVolumeSnapshotRestoreWithCompletedStatus(vsr.Namespace, vsr.Name, vsr.Spec.ProtectedNamespace, p.Log)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
 	if !volSnapshotRestoreCompleted {
-		return nil, errors.New("volumeSnapshotRestore never completed")
+		return nil, errors.New("volumeSnapshotRestore has not completed")
 	}
 
-	p.Log.Infof("[vsb-restore] VSR completed completed: %s", vsr.Name)
+	p.Log.Infof("[vsb-restore] VSR completed: %s", vsr.Name)
 
 	// returning empty output so we do not restore VSB
 	return &velero.RestoreItemActionExecuteOutput{}, nil
