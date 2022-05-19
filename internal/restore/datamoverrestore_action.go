@@ -83,6 +83,8 @@ func (p *VolumeSnapshotRestoreRestoreItemAction) Execute(input *velero.RestoreIt
 
 	p.Log.Infof("[vsb-restore] VSR completed: %s", vsr.Name)
 
-	// returning empty output so we do not restore VSB
-	return &velero.RestoreItemActionExecuteOutput{}, nil
+	// don't restore VSB
+	return &velero.RestoreItemActionExecuteOutput{
+		SkipRestore: true,
+	}, nil
 }
