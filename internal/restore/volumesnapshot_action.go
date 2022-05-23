@@ -18,9 +18,12 @@ package restore
 
 import (
 	"context"
+	"fmt"
 
+	datamoverv1alpha1 "github.com/konveyor/volume-snapshot-mover/api/v1alpha1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	snapshotv1beta1api "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1beta1"
 	core_v1 "k8s.io/api/core/v1"
@@ -59,15 +62,20 @@ func resetVolumeSnapshotSpecForRestore(vs *snapshotv1beta1api.VolumeSnapshot, vs
 func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActionExecuteInput) (*velero.RestoreItemActionExecuteOutput, error) {
 	p.Log.Info("Starting VolumeSnapshotRestoreItemAction")
 	var vs snapshotv1beta1api.VolumeSnapshot
-
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(input.Item.UnstructuredContent(), &vs); err != nil {
 		return &velero.RestoreItemActionExecuteOutput{}, errors.Wrapf(err, "failed to convert input.Item from unstructured")
 	}
 
-	// If cross-namespace restore is configured, change the namespace
-	// for VolumeSnapshot object to be restored
-	if val, ok := input.Restore.Spec.NamespaceMapping[vs.GetNamespace()]; ok {
-		vs.SetNamespace(val)
+	vsr := datamoverv1alpha1.VolumeSnapshotRestore{}
+	datamoverClient, err := util.GetDatamoverClient()
+	if err != nil {
+		return nil, err
+	}
+
+	VSRestoreName := fmt.Sprintf("vsr-%v", *vs.Spec.Source.PersistentVolumeClaimName)
+	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: vs.Namespace, Name: VSRestoreName}, &vsr)
+	if err != nil {
+		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestore %s/%s", VSRestoreName, vs.Namespace))
 	}
 
 	_, snapClient, err := util.GetClients()
@@ -76,10 +84,7 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 	}
 
 	if !util.IsVolumeSnapshotExists(&vs, snapClient.SnapshotV1beta1()) {
-		snapHandle, exists := vs.Annotations[util.VolumeSnapshotHandleAnnotation]
-		if !exists {
-			return nil, errors.Errorf("Volumesnapshot %s/%s does not have a %s annotation", vs.Namespace, vs.Name, util.VolumeSnapshotHandleAnnotation)
-		}
+		snapHandle := vsr.Status.SnapshotHandle
 
 		csiDriverName, exists := vs.Annotations[util.CSIDriverNameAnnotation]
 		if !exists {
@@ -93,10 +98,9 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 			deletionPolicy = string(snapshotv1beta1api.VolumeSnapshotContentRetain)
 		}
 
-		// TODO: generated name will be like velero-velero-something. Fix that.
 		vsc := snapshotv1beta1api.VolumeSnapshotContent{
 			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: "velero-" + vs.Name + "-",
+				Name: fmt.Sprint("vsr-vsc-" + vsr.Spec.DataMoverBackupref.BackedUpPVCData.Name),
 				Labels: map[string]string{
 					velerov1api.RestoreNameLabel: label.GetValidName(input.Restore.Name),
 				},
@@ -123,14 +127,14 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 		// See: https://github.com/kubernetes-csi/external-snapshotter/issues/274
 		vscupd, err := snapClient.SnapshotV1beta1().VolumeSnapshotContents().Create(context.TODO(), &vsc, metav1.CreateOptions{})
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create volumesnapshotcontents %s", vsc.GenerateName)
+			return nil, errors.Wrapf(err, "failed to create volumesnapshotcontents %s", vsc.Name)
 		}
-		p.Log.Infof("Created VolumesnapshotContents %s with static binding to volumesnapshot %s/%s", vscupd, vs.Namespace, vs.Name)
+
+		p.Log.Infof("Created VolumesnapshotContents %s with static binding to volumesnapshot", vscupd)
 
 		// Reset Spec to convert the volumesnapshot from using the dyanamic volumesnapshotcontent to the static one.
 		resetVolumeSnapshotSpecForRestore(&vs, &vscupd.Name)
 	}
-
 	vsMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&vs)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -138,6 +142,7 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 
 	p.Log.Infof("Returning from VolumeSnapshotRestoreItemAction with no additionalItems")
 
+	// do not restore velero VS as we are using a VolSync VS
 	return &velero.RestoreItemActionExecuteOutput{
 		UpdatedItem:     &unstructured.Unstructured{Object: vsMap},
 		AdditionalItems: []velero.ResourceIdentifier{},

@@ -19,18 +19,18 @@ package util
 import (
 	"context"
 	"fmt"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	snapshotv1beta1api "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1beta1"
 	snapshotterClientSet "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
 	snapshotter "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned/typed/volumesnapshot/v1beta1"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	corev1api "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -205,6 +205,43 @@ func DoesVolumeSnapshotBackupExistForVSC(snapCont *snapshotv1beta1api.VolumeSnap
 	return false, err
 }
 
+// block until replicationDestination is completed to use that snaphandle
+func GetVolumeSnapshotRestoreWithCompletedStatus(volumeSnapshotNS string, volumeSnapshotRestoreName string, protectedNS string, log logrus.FieldLogger) (bool, error) {
+
+	timeout := 10 * time.Minute
+	interval := 5 * time.Second
+
+	vsr := datamoverv1alpha1.VolumeSnapshotRestore{}
+	datamoverClient, err := GetDatamoverClient()
+	if err != nil {
+		return false, err
+	}
+
+	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
+		err := datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volumeSnapshotNS, Name: volumeSnapshotRestoreName}, &vsr)
+		log.Infof("Inside IsVolumeSnapshotRestoreCompleted, Fetched VSR: %v/%v ", volumeSnapshotRestoreName, volumeSnapshotNS)
+		if err != nil {
+			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestore %s", volumeSnapshotRestoreName))
+		}
+
+		if len(vsr.Status.SnapshotHandle) > 0 && vsr.Status.Completed == true {
+			log.Infof("VSR %v has completed", volumeSnapshotRestoreName)
+			return true, nil
+		}
+		log.Infof("Waiting for volumesnapshotrestore %s/%s to complete. Retrying in %ds", volumeSnapshotRestoreName, volumeSnapshotNS, interval/time.Second)
+		return false, nil
+	})
+
+	if err != nil {
+		if err == wait.ErrWaitTimeout {
+			log.Errorf("Timed out awaiting reconciliation of volumesnapshotrestore %s", volumeSnapshotRestoreName)
+		}
+		return false, err
+	}
+	log.Infof("Returning from IsVolumeSnapshotRestoreCompleted as true: %v", vsr.Name)
+	return true, nil
+}
+
 //Waits for volumesnapshotcontent to be in ready state
 func WaitForVolumeSnapshotContentToBeReady(snapCont snapshotv1beta1api.VolumeSnapshotContent, snapshotClient snapshotter.SnapshotV1beta1Interface, log logrus.FieldLogger) (bool, error) {
 	// We'll wait 10m for the VSC to be reconciled polling every 5s
@@ -374,7 +411,6 @@ func IsVolumeSnapshotExists(volSnap *snapshotv1beta1api.VolumeSnapshot, snapshot
 			exists = true
 		}
 	}
-
 	return exists
 }
 
