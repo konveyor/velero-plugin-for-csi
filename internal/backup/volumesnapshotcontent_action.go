@@ -19,6 +19,7 @@ package backup
 import (
 	"context"
 	"fmt"
+
 	snapshotv1beta1api "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1beta1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -96,7 +97,7 @@ func (p *VolumeSnapshotContentBackupItemAction) Execute(item runtime.Unstructure
 
 	// Create VSB only if does not exist for the VSC
 	if !VSBExists {
-		vsbClient, err := util.GetDatamoverClient()
+		vsbClient, err := util.GetVolumeSnapshotMoverClient()
 
 		err = vsbClient.Create(context.Background(), &vsb)
 

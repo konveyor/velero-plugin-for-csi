@@ -29,7 +29,7 @@ func (p *VolumeSnapshotRestoreRestoreItemAction) AppliesTo() (velero.ResourceSel
 	}, nil
 }
 
-// Execute backs up a DataMoverBackup object with a completely filled status
+// Execute backs up a VolumeSnapshotBackup object with a completely filled status
 func (p *VolumeSnapshotRestoreRestoreItemAction) Execute(input *velero.RestoreItemActionExecuteInput) (*velero.RestoreItemActionExecuteOutput, error) {
 	p.Log.Infof("Executing VolumeSnapshotRestoreRestoreItemAction")
 	p.Log.Infof("Executing on item: %v", input.Item)
@@ -39,7 +39,7 @@ func (p *VolumeSnapshotRestoreRestoreItemAction) Execute(input *velero.RestoreIt
 		return &velero.RestoreItemActionExecuteOutput{}, errors.Wrapf(err, "failed to convert VSB input.Item from unstructured")
 	}
 
-	datamoverClient, err := util.GetDatamoverClient()
+	snapMoverClient, err := util.GetVolumeSnapshotMoverClient()
 	if err != nil {
 		return nil, err
 	}
@@ -47,25 +47,25 @@ func (p *VolumeSnapshotRestoreRestoreItemAction) Execute(input *velero.RestoreIt
 	// create VSR
 	vsr := datamoverv1alpha1.VolumeSnapshotRestore{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprint("vsr-" + vsb.Annotations[util.DatamoverSourcePVCName]),
+			Name:      fmt.Sprint("vsr-" + vsb.Annotations[util.VolumeSnapshotMoverSourcePVCName]),
 			Namespace: vsb.Namespace,
 		},
 		Spec: datamoverv1alpha1.VolumeSnapshotRestoreSpec{
 			ResticSecretRef: corev1.LocalObjectReference{
 				Name: "restic-secret",
 			},
-			DataMoverBackupref: datamoverv1alpha1.DMBRef{
+			VolumeSnapshotMoverBackupref: datamoverv1alpha1.VSBRef{
 				BackedUpPVCData: datamoverv1alpha1.PVCData{
-					Name: vsb.Annotations[util.DatamoverSourcePVCName],
-					Size: vsb.Annotations[util.DatamoverSourcePVCSize],
+					Name: vsb.Annotations[util.VolumeSnapshotMoverSourcePVCName],
+					Size: vsb.Annotations[util.VolumeSnapshotMoverSourcePVCSize],
 				},
-				ResticRepository: vsb.Annotations[util.DatamoverResticRepository],
+				ResticRepository: vsb.Annotations[util.VolumeSnapshotMoverResticRepository],
 			},
 			ProtectedNamespace: vsb.Spec.ProtectedNamespace,
 		},
 	}
 
-	err = datamoverClient.Create(context.Background(), &vsr)
+	err = snapMoverClient.Create(context.Background(), &vsr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error creating volumesnapshotrestore CR")
 	}
