@@ -150,18 +150,18 @@ func GetVolumeSnapshotbackupWithCompletedStatus(volumeSnapshotbackupNS string, v
 	interval := 5 * time.Second
 	vsb := datamoverv1alpha1.VolumeSnapshotBackup{}
 
-	datamoverClient, err := GetDatamoverClient()
+	snapMoverClient, err := GetVolumeSnapshotMoverClient()
 	if err != nil {
 		return vsb, err
 	}
 
 	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
-		err := datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volumeSnapshotbackupNS, Name: volumeSnapshotName}, &vsb)
+		err := snapMoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volumeSnapshotbackupNS, Name: volumeSnapshotName}, &vsb)
 		if err != nil {
 			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotbackup %s/%s", volumeSnapshotbackupNS, volumeSnapshotName))
 		}
 
-		if len(vsb.Status.Phase) == 0 || vsb.Status.Phase != datamoverv1alpha1.DatamoverBackupPhaseCompleted {
+		if len(vsb.Status.Phase) == 0 || vsb.Status.Phase != datamoverv1alpha1.SnapMoverBackupPhaseCompleted {
 			log.Infof("Waiting for volumesnapshotbackup %s/%s to complete. Retrying in %ds", volumeSnapshotbackupNS, volumeSnapshotName, interval/time.Second)
 			return false, nil
 		}
@@ -182,13 +182,13 @@ func GetVolumeSnapshotbackupWithCompletedStatus(volumeSnapshotbackupNS string, v
 
 // Check if volumesnapshotbackup CR exists for a given volumesnapshotcontent
 func DoesVolumeSnapshotBackupExistForVSC(snapCont *snapshotv1beta1api.VolumeSnapshotContent, log logrus.FieldLogger) (bool, error) {
-	datamoverClient, err := GetDatamoverClient()
+	snapMoverClient, err := GetVolumeSnapshotMoverClient()
 	if err != nil {
 		return false, err
 	}
 	vsb := datamoverv1alpha1.VolumeSnapshotBackup{}
 
-	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: snapCont.Spec.VolumeSnapshotRef.Namespace, Name: fmt.Sprint("vsb-" + snapCont.Spec.VolumeSnapshotRef.Name)}, &vsb)
+	err = snapMoverClient.Get(context.TODO(), client.ObjectKey{Namespace: snapCont.Spec.VolumeSnapshotRef.Namespace, Name: fmt.Sprint("vsb-" + snapCont.Spec.VolumeSnapshotRef.Name)}, &vsb)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Infof("could not find volumesnapshotbackup for the given volumesnapshotcontent")
@@ -212,19 +212,19 @@ func GetVolumeSnapshotRestoreWithCompletedStatus(volumeSnapshotNS string, volume
 	interval := 5 * time.Second
 
 	vsr := datamoverv1alpha1.VolumeSnapshotRestore{}
-	datamoverClient, err := GetDatamoverClient()
+	snapMoverClient, err := GetVolumeSnapshotMoverClient()
 	if err != nil {
 		return false, err
 	}
 
 	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
-		err := datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volumeSnapshotNS, Name: volumeSnapshotRestoreName}, &vsr)
+		err := snapMoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volumeSnapshotNS, Name: volumeSnapshotRestoreName}, &vsr)
 		log.Infof("Inside IsVolumeSnapshotRestoreCompleted, Fetched VSR: %v/%v ", volumeSnapshotRestoreName, volumeSnapshotNS)
 		if err != nil {
 			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestore %s", volumeSnapshotRestoreName))
 		}
 
-		if len(vsr.Status.SnapshotHandle) > 0 && vsr.Status.Completed == true {
+		if len(vsr.Status.SnapshotHandle) > 0 && vsr.Status.Phase == datamoverv1alpha1.SnapMoverRestorePhaseCompleted {
 			log.Infof("VSR %v has completed", volumeSnapshotRestoreName)
 			return true, nil
 		}
@@ -325,7 +325,7 @@ func GetVolumeSnapshotContentForVolumeSnapshot(volSnap *snapshotv1beta1api.Volum
 	return snapshotContent, nil
 }
 
-func GetDatamoverClient() (client.Client, error) {
+func GetVolumeSnapshotMoverClient() (client.Client, error) {
 	client2, err := client.New(config.GetConfigOrDie(), client.Options{})
 	if err != nil {
 		return nil, err

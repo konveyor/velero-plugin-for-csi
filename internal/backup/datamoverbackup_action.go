@@ -48,9 +48,9 @@ func (p *VolumeSnapshotBackupBackupItemAction) Execute(item runtime.Unstructured
 	vsb.Status = *vsbNew.Status.DeepCopy()
 
 	vals := map[string]string{
-		util.DatamoverResticRepository: vsb.Status.ResticRepository,
-		util.DatamoverSourcePVCName:    vsb.Status.SourcePVCData.Name,
-		util.DatamoverSourcePVCSize:    vsb.Status.SourcePVCData.Size,
+		util.VolumeSnapshotMoverResticRepository: vsb.Status.ResticRepository,
+		util.VolumeSnapshotMoverSourcePVCName:    vsb.Status.SourcePVCData.Name,
+		util.VolumeSnapshotMoverSourcePVCSize:    vsb.Status.SourcePVCData.Size,
 	}
 
 	//Add all the relevant status info as annotations because velero strips status subresource for CRDs

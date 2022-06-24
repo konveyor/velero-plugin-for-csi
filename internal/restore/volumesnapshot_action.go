@@ -67,13 +67,13 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 	}
 
 	vsr := datamoverv1alpha1.VolumeSnapshotRestore{}
-	datamoverClient, err := util.GetDatamoverClient()
+	snapMoverClient, err := util.GetVolumeSnapshotMoverClient()
 	if err != nil {
 		return nil, err
 	}
 
 	VSRestoreName := fmt.Sprintf("vsr-%v", *vs.Spec.Source.PersistentVolumeClaimName)
-	err = datamoverClient.Get(context.TODO(), client.ObjectKey{Namespace: vs.Namespace, Name: VSRestoreName}, &vsr)
+	err = snapMoverClient.Get(context.TODO(), client.ObjectKey{Namespace: vs.Namespace, Name: VSRestoreName}, &vsr)
 	if err != nil {
 		return nil, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestore %s/%s", VSRestoreName, vs.Namespace))
 	}
@@ -100,7 +100,7 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 
 		vsc := snapshotv1beta1api.VolumeSnapshotContent{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: fmt.Sprint("vsr-vsc-" + vsr.Spec.DataMoverBackupref.BackedUpPVCData.Name),
+				Name: fmt.Sprint("vsr-vsc-" + vsr.Spec.VolumeSnapshotMoverBackupref.BackedUpPVCData.Name),
 				Labels: map[string]string{
 					velerov1api.RestoreNameLabel: label.GetValidName(input.Restore.Name),
 				},

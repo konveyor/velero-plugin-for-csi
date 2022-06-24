@@ -527,6 +527,8 @@ github.com/konveyor/volume-snapshot-mover v0.0.0-20220512143335-5df9c2ff91eb h1:
 github.com/konveyor/volume-snapshot-mover v0.0.0-20220512143335-5df9c2ff91eb/go.mod h1:WSd3TzQziXnwnzaujb8ABwBHJFC6WyUZgA8YcZSkuZU=
 github.com/konveyor/volume-snapshot-mover v0.0.0-20220519151020-5ea3140d1e69 h1:O9lnRhDS5uW5CYemXj9vMC2sDe+Pxq+Zwt5Psd9fZDA=
 github.com/konveyor/volume-snapshot-mover v0.0.0-20220519151020-5ea3140d1e69/go.mod h1:WSd3TzQziXnwnzaujb8ABwBHJFC6WyUZgA8YcZSkuZU=
+github.com/konveyor/volume-snapshot-mover v0.0.0-20220617193342-fa0bdded5683 h1:JnJLShFlCAcM7babxBOZGJKe/E1oaQwqTurmVMQR8iA=
+github.com/konveyor/volume-snapshot-mover v0.0.0-20220617193342-fa0bdded5683/go.mod h1:WSd3TzQziXnwnzaujb8ABwBHJFC6WyUZgA8YcZSkuZU=
 github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
