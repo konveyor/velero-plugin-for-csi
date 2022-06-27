@@ -9,13 +9,11 @@ reviewers:
 
   groups:
     maintainers:
-      - zubron
-      - dsu-igeek
-      - jenting
       - sseago
       - reasonerjt
       - ywk253100
-
+      - blackpiglet
+      - shubham-pampattiwar
 options:
   ignore_draft: true
   ignored_keywords:

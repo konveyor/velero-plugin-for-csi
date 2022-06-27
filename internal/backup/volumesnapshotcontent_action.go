@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	snapshotv1beta1api "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1beta1"
+	snapshotv1api "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	corev1api "k8s.io/api/core/v1"
@@ -54,7 +54,7 @@ func (p *VolumeSnapshotContentBackupItemAction) AppliesTo() (velero.ResourceSele
 func (p *VolumeSnapshotContentBackupItemAction) Execute(item runtime.Unstructured, backup *velerov1api.Backup) (runtime.Unstructured, []velero.ResourceIdentifier, error) {
 	p.Log.Infof("Executing VolumeSnapshotContentBackupItemAction")
 
-	var snapCont snapshotv1beta1api.VolumeSnapshotContent
+	var snapCont snapshotv1api.VolumeSnapshotContent
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(item.UnstructuredContent(), &snapCont); err != nil {
 		return nil, nil, errors.WithStack(err)
 	}
@@ -65,7 +65,7 @@ func (p *VolumeSnapshotContentBackupItemAction) Execute(item runtime.Unstructure
 	}
 
 	// Wait for VSC to be in ready state
-	VSCReady, err := util.WaitForVolumeSnapshotContentToBeReady(snapCont, snapshotClient.SnapshotV1beta1(), p.Log)
+	VSCReady, err := util.WaitForVolumeSnapshotContentToBeReady(snapCont, snapshotClient.SnapshotV1(), p.Log)
 
 	if err != nil {
 		return nil, nil, errors.WithStack(err)
