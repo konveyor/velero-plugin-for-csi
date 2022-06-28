@@ -35,17 +35,17 @@ func (p *VolumeSnapshotBackupBackupItemAction) Execute(item runtime.Unstructured
 		return nil, nil, errors.WithStack(err)
 	}
 	p.Log.Infof("Converted Item to VSB: %v", vsb)
-	vsbNew, err := util.GetVolumeSnapshotbackupWithCompletedStatus(vsb.Namespace, vsb.Name, p.Log)
+	//vsbNew, err := util.GetVolumeSnapshotbackupWithCompletedStatus(vsb.Namespace, vsb.Name, p.Log)
+	//
+	//if err != nil {
+	//	return nil, nil, errors.WithStack(err)
+	//}
 
-	if err != nil {
-		return nil, nil, errors.WithStack(err)
-	}
+	p.Log.Infof("Value of vsbNew is : %v", vsb)
 
-	p.Log.Infof("Value of vsbNew is : %v", vsbNew)
+	p.Log.Infof("Value of vsbNew status: %v", vsb.Status)
 
-	p.Log.Infof("Value of vsbNew status: %v", vsbNew.Status)
-
-	vsb.Status = *vsbNew.Status.DeepCopy()
+	vsb.Status = *vsb.Status.DeepCopy()
 
 	vals := map[string]string{
 		util.DatamoverResticRepository: vsb.Status.ResticRepository,
