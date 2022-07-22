@@ -17,8 +17,11 @@ limitations under the License.
 package restore
 
 import (
+	"context"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"reflect"
 
 	snapshotv1api "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -60,10 +63,26 @@ func (p *VolumeSnapshotClassRestoreItemAction) Execute(input *velero.RestoreItem
 		})
 	}
 
+	// check if volumesnapshotclass already exists in the cluster then skip its restore
+	_, snapshotClient, err := util.GetClients()
+	if err != nil {
+		return &velero.RestoreItemActionExecuteOutput{}, errors.WithStack(err)
+	}
+
+	vsClassInCluster, err := snapshotClient.SnapshotV1().VolumeSnapshotClasses().Get(context.TODO(), snapClass.Name, metav1.GetOptions{})
+	if err != nil {
+		return &velero.RestoreItemActionExecuteOutput{}, errors.WithStack(err)
+	}
+	skipVSClassRestore := false
+	if reflect.DeepEqual(snapClass, vsClassInCluster) {
+		skipVSClassRestore = true
+	}
+
 	p.Log.Infof("Returning from VolumeSnapshotClassRestoreItemAction with %d additionalItems", len(additionalItems))
 
 	return &velero.RestoreItemActionExecuteOutput{
 		UpdatedItem:     input.Item,
 		AdditionalItems: additionalItems,
+		SkipRestore:     skipVSClassRestore,
 	}, nil
 }
