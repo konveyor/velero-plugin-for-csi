@@ -316,8 +316,7 @@ func GetVolumeSnapshotbackupWithStatusData(volumeSnapshotbackupNS string, volume
 			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotbackup %s/%s", volumeSnapshotbackupNS, volumeSnapshotName))
 		}
 
-		// TODO: Add wait for storageclass and volumesnapshotclass as well, once its support gets merged
-		if len(vsb.Status.ResticRepository) == 0 || len(vsb.Status.SourcePVCData.Name) == 0 || len(vsb.Status.SourcePVCData.Size) == 0 {
+		if len(vsb.Status.ResticRepository) == 0 || len(vsb.Status.SourcePVCData.Name) == 0 || len(vsb.Status.SourcePVCData.Size) == 0 || len(vsb.Status.SourcePVCData.StorageClassName) == 0 || len(vsb.Status.VolumeSnapshotClassName) == 0 {
 			log.Infof("Waiting for volumesnapshotbackup %s/%s to have status data. Retrying in %ds", volumeSnapshotbackupNS, volumeSnapshotName, interval/time.Second)
 			return false, nil
 		}
