@@ -326,6 +326,18 @@ func GetVolumeSnapshotbackupWithStatusData(volumeSnapshotbackupNS string, volume
 			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotbackup %s/%s", volumeSnapshotbackupNS, volumeSnapshotName))
 		}
 
+		if len(vsb.Status.Conditions) == 0 {
+			log.Infof("Waiting for volumesnapshotbackup %s to have conditions. Retrying in %ds", vsb.Name, interval/time.Second)
+			return false, nil
+		}
+
+		// check for status failure first
+		for _, condition := range vsb.Status.Conditions {
+			if condition.Status == metav1.ConditionFalse {
+				return false, errors.Errorf("volumesnapshotbackup %v has failed status", vsb.Name)
+			}
+		}
+
 		if len(vsb.Status.ResticRepository) == 0 || len(vsb.Status.SourcePVCData.Name) == 0 || len(vsb.Status.SourcePVCData.Size) == 0 || len(vsb.Status.SourcePVCData.StorageClassName) == 0 || len(vsb.Status.VolumeSnapshotClassName) == 0 {
 			log.Infof("Waiting for volumesnapshotbackup %s/%s to have status data. Retrying in %ds", volumeSnapshotbackupNS, volumeSnapshotName, interval/time.Second)
 			return false, nil
@@ -492,55 +504,55 @@ func VSBHasVSBackupName(backup *velerov1api.Backup, snapCont *snapshotv1api.Volu
 	return true
 }
 
-func GetVSBWithConditions(volumeSnapshotbackupNS string, volumeSnapshotName string, log logrus.FieldLogger) (bool, error) {
-	timeout := 5 * time.Minute
-	interval := 3 * time.Second
+// func GetVSBWithConditions(volumeSnapshotbackupNS string, volumeSnapshotName string, log logrus.FieldLogger) (bool, error) {
+// 	timeout := 5 * time.Minute
+// 	interval := 3 * time.Second
 
-	vsb := datamoverv1alpha1.VolumeSnapshotBackup{}
-	snapMoverClient, err := GetVolumeSnapshotMoverClient()
-	if err != nil {
-		return false, err
-	}
+// 	vsb := datamoverv1alpha1.VolumeSnapshotBackup{}
+// 	snapMoverClient, err := GetVolumeSnapshotMoverClient()
+// 	if err != nil {
+// 		return false, err
+// 	}
 
-	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
-		err := snapMoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volumeSnapshotbackupNS, Name: volumeSnapshotName}, &vsb)
-		if err != nil {
-			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotbackup %s/%s", volumeSnapshotbackupNS, volumeSnapshotName))
-		}
+// 	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
+// 		err := snapMoverClient.Get(context.TODO(), client.ObjectKey{Namespace: volumeSnapshotbackupNS, Name: volumeSnapshotName}, &vsb)
+// 		if err != nil {
+// 			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotbackup %s/%s", volumeSnapshotbackupNS, volumeSnapshotName))
+// 		}
 
-		if len(vsb.Status.Conditions) == 0 {
-			log.Infof("Waiting for volumesnapshotbackup %s to have conditions. Retrying in %ds", vsb.Name, interval/time.Second)
-			return false, nil
-		}
+// 		if len(vsb.Status.Conditions) == 0 {
+// 			log.Infof("Waiting for volumesnapshotbackup %s to have conditions. Retrying in %ds", vsb.Name, interval/time.Second)
+// 			return false, nil
+// 		}
 
-		return true, nil
-	})
-	if err != nil {
-		if err == wait.ErrWaitTimeout {
-			log.Errorf("Timed out awaiting reconciliation of volumesnapshotbackup conditions %s", vsb.Name)
-		}
-		return false, err
-	}
+// 		return true, nil
+// 	})
+// 	if err != nil {
+// 		if err == wait.ErrWaitTimeout {
+// 			log.Errorf("Timed out awaiting reconciliation of volumesnapshotbackup conditions %s", vsb.Name)
+// 		}
+// 		return false, err
+// 	}
 
-	return true, nil
-}
+// 	return true, nil
+// }
 
-func CheckVSBFailed(backup *velerov1api.Backup, vsb *datamoverv1alpha1.VolumeSnapshotBackup, log logrus.FieldLogger) error {
+// func CheckVSBFailed(backup *velerov1api.Backup, vsb *datamoverv1alpha1.VolumeSnapshotBackup, log logrus.FieldLogger) error {
 
-	// check VSB has status conditions
-	doesVSBHaveConditions, err := GetVSBWithConditions(vsb.Namespace, vsb.Name, log)
-	if err != nil {
-		return err
-	}
+// 	// check VSB has status conditions
+// 	doesVSBHaveConditions, err := GetVSBWithConditions(vsb.Namespace, vsb.Name, log)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	if !doesVSBHaveConditions {
-		return errors.Errorf("err getting conditions for volumesnapshotbackup %s ", vsb.Name)
-	}
+// 	if !doesVSBHaveConditions {
+// 		return errors.Errorf("err getting conditions for volumesnapshotbackup %s ", vsb.Name)
+// 	}
 
-	for _, condition := range vsb.Status.Conditions {
-		if condition.Status == metav1.ConditionFalse {
-			return errors.Errorf("volumesnapshotbackup %v has failed status", vsb.Name)
-		}
-	}
-	return nil
-}
+// 	for _, condition := range vsb.Status.Conditions {
+// 		if condition.Status == metav1.ConditionFalse {
+// 			return errors.Errorf("volumesnapshotbackup %v has failed status", vsb.Name)
+// 		}
+// 	}
+// 	return nil
+// }
