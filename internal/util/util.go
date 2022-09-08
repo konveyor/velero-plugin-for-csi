@@ -52,6 +52,8 @@ const (
 	//TODO: use annotation from velero https://github.com/vmware-tanzu/velero/pull/2283
 	resticPodAnnotation = "backup.velero.io/backup-volumes"
 )
+const ReconciledReasonError = "Error"
+const ConditionReconciled = "Reconciled"
 
 func GetPVForPVC(pvc *corev1api.PersistentVolumeClaim, corev1 corev1client.PersistentVolumesGetter) (*corev1api.PersistentVolume, error) {
 	if pvc.Spec.VolumeName == "" {
@@ -333,7 +335,7 @@ func GetVolumeSnapshotbackupWithStatusData(volumeSnapshotbackupNS string, volume
 
 		// check for status failure first
 		for _, condition := range vsb.Status.Conditions {
-			if condition.Status == metav1.ConditionFalse {
+			if condition.Status == metav1.ConditionFalse && condition.Reason == ReconciledReasonError && condition.Type == ConditionReconciled {
 				return false, errors.Errorf("volumesnapshotbackup %v has failed status", vsb.Name)
 			}
 		}
