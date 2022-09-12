@@ -50,10 +50,10 @@ import (
 
 const (
 	//TODO: use annotation from velero https://github.com/vmware-tanzu/velero/pull/2283
-	resticPodAnnotation = "backup.velero.io/backup-volumes"
+	resticPodAnnotation   = "backup.velero.io/backup-volumes"
+	ReconciledReasonError = "Error"
+	ConditionReconciled   = "Reconciled"
 )
-const ReconciledReasonError = "Error"
-const ConditionReconciled = "Reconciled"
 
 func GetPVForPVC(pvc *corev1api.PersistentVolumeClaim, corev1 corev1client.PersistentVolumesGetter) (*corev1api.PersistentVolume, error) {
 	if pvc.Spec.VolumeName == "" {
