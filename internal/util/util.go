@@ -477,12 +477,10 @@ func CheckIfVolumeSnapshotRestoresAreComplete(ctx context.Context, volumesnapsho
 				if err != nil {
 					return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestore %s/%s", volumesnapshotrestore.Namespace, volumesnapshotrestore.Name))
 				}
+
 				// check for a failed VSR
-				for _, cond := range tmpVSR.Status.Conditions {
-					if cond.Status == metav1.ConditionFalse && cond.Reason == ReconciledReasonError && cond.Type == ConditionReconciled &&
-						tmpVSR.Status.Phase == datamoverv1alpha1.SnapMoverRestorePhaseFailed {
-						return false, errors.Errorf("volumesnapshotrestore %s has failed status", tmpVSR.Name)
-					}
+				if tmpVSR.Status.Phase == datamoverv1alpha1.SnapMoverRestorePhaseFailed {
+					return false, errors.Errorf("volumesnapshotrestore %s has failed status", tmpVSR.Name)
 				}
 
 				// current VSR in list is still in progress
