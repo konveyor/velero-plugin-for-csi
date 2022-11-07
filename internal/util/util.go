@@ -360,6 +360,64 @@ func GetVolumeSnapshotbackupWithStatusData(volumeSnapshotbackupNS string, volume
 	return vsb, nil
 }
 
+// Get VolumeSnapshotBackup CR with status data
+func GetVolumeSnapshotRestoreWithStatusData(restoreName string, PVCName string, log logrus.FieldLogger) (datamoverv1alpha1.VolumeSnapshotRestoreList, error) {
+
+	vsrList := datamoverv1alpha1.VolumeSnapshotRestoreList{}
+	// default timeout value is 10
+	timeoutValue := "10m"
+	// use timeout value if configured
+	if len(os.Getenv(DatamoverTimeout)) > 0 {
+		timeoutValue = os.Getenv(DatamoverTimeout)
+	}
+
+	timeout, err := time.ParseDuration(timeoutValue)
+	if err != nil {
+		return vsrList, errors.Wrapf(err, "error parsing the datamover timout")
+	}
+	interval := 5 * time.Second
+
+	////
+	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
+
+		snapMoverClient, err := GetVolumeSnapshotMoverClient()
+		if err != nil {
+			return false, err
+		}
+
+		VSRListOptions := client.MatchingLabels(map[string]string{
+			velerov1api.RestoreNameLabel: restoreName,
+			PersistentVolumeClaimLabel:   PVCName,
+		})
+
+		err = snapMoverClient.List(context.TODO(), &vsrList, VSRListOptions)
+		if err != nil {
+			return false, errors.Wrapf(err, fmt.Sprintf("failed to get volumesnapshotrestoreList for PVC %s", PVCName))
+		}
+
+		if len(vsrList.Items) > 0 {
+			if len(vsrList.Items[0].Status.SnapshotHandle) == 0 || len(vsrList.Items[0].Status.Phase) == 0 {
+				log.Infof("Waiting for volumesnapshotrestore %s to have status data. Retrying in %ds", vsrList.Items[0].Name, interval/time.Second)
+				return false, nil
+			}
+			if vsrList.Items[0].Status.Phase == "Failed" {
+				return false, errors.Errorf("volumesnapshotrestore %v has failed status", vsrList.Items[0].Name)
+			}
+		}
+
+		return true, nil
+	})
+
+	if err != nil {
+		if err == wait.ErrWaitTimeout {
+			log.Errorf("Timed out awaiting reconciliation of volumesnapshotrestoreList")
+		}
+		return vsrList, err
+	}
+	log.Infof("Return VSR from GetVolumeSnapshotrestoreWithInProgressStatus: %v", vsrList)
+	return vsrList, nil
+}
+
 // Check if volumesnapshotbackup CR exists for a given volumesnapshotcontent
 func DoesVolumeSnapshotBackupExistForVSC(snapCont *snapshotv1api.VolumeSnapshotContent, log logrus.FieldLogger) (bool, error) {
 	snapMoverClient, err := GetVolumeSnapshotMoverClient()
