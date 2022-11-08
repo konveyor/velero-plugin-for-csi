@@ -54,6 +54,9 @@ const (
 	resticPodAnnotation   = "backup.velero.io/backup-volumes"
 	ReconciledReasonError = "Error"
 	ConditionReconciled   = "Reconciled"
+
+	// Timeout consts
+	DefaultVSRTimeout = "10m"
 )
 
 func GetPVForPVC(pvc *corev1api.PersistentVolumeClaim, corev1 corev1client.PersistentVolumesGetter) (*corev1api.PersistentVolume, error) {
@@ -365,7 +368,7 @@ func GetVolumeSnapshotRestoreWithStatusData(restoreName string, PVCName string, 
 
 	vsrList := datamoverv1alpha1.VolumeSnapshotRestoreList{}
 	// default timeout value is 10
-	timeoutValue := "10m"
+	timeoutValue := DefaultVSRTimeout
 	// use timeout value if configured
 	if len(os.Getenv(DatamoverTimeout)) > 0 {
 		timeoutValue = os.Getenv(DatamoverTimeout)
@@ -377,7 +380,6 @@ func GetVolumeSnapshotRestoreWithStatusData(restoreName string, PVCName string, 
 	}
 	interval := 5 * time.Second
 
-	////
 	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
 
 		snapMoverClient, err := GetVolumeSnapshotMoverClient()
@@ -396,12 +398,13 @@ func GetVolumeSnapshotRestoreWithStatusData(restoreName string, PVCName string, 
 		}
 
 		if len(vsrList.Items) > 0 {
+			if vsrList.Items[0].Status.Phase == "Failed" {
+				return false, errors.Errorf("volumesnapshotrestore %v has failed status", vsrList.Items[0].Name)
+			}
+
 			if len(vsrList.Items[0].Status.SnapshotHandle) == 0 || len(vsrList.Items[0].Status.Phase) == 0 {
 				log.Infof("Waiting for volumesnapshotrestore %s to have status data. Retrying in %ds", vsrList.Items[0].Name, interval/time.Second)
 				return false, nil
-			}
-			if vsrList.Items[0].Status.Phase == "Failed" {
-				return false, errors.Errorf("volumesnapshotrestore %v has failed status", vsrList.Items[0].Name)
 			}
 		}
 
@@ -414,7 +417,7 @@ func GetVolumeSnapshotRestoreWithStatusData(restoreName string, PVCName string, 
 		}
 		return vsrList, err
 	}
-	log.Infof("Return VSR from GetVolumeSnapshotrestoreWithInProgressStatus: %v", vsrList)
+	log.Debugf("Return VSR from GetVolumeSnapshotrestoreWithInProgressStatus: %v", vsrList)
 	return vsrList, nil
 }
 
