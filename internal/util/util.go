@@ -610,6 +610,10 @@ func VSBHasVSBackupName(backup *velerov1api.Backup, snapCont *snapshotv1api.Volu
 }
 
 func WaitForVolumeSnapshotSourceToBeReady(volSnap *snapshotv1api.VolumeSnapshot, log logrus.FieldLogger) error {
+	if volSnap == nil {
+		return errors.New("nil volumeSnapshot in WaitForVolumeSnapshotSourceToBeReady")
+	}
+
 	timeoutValue := "10m"
 
 	// use timeout value if configured
