@@ -608,3 +608,33 @@ func VSBHasVSBackupName(backup *velerov1api.Backup, snapCont *snapshotv1api.Volu
 
 	return true
 }
+
+func WaitForVolumeSnapshotSourceToBeReady(volSnap *snapshotv1api.VolumeSnapshot, log logrus.FieldLogger) error {
+	timeoutValue := "10m"
+
+	// use timeout value if configured
+	if len(os.Getenv(DatamoverTimeout)) > 0 {
+		timeoutValue = os.Getenv(DatamoverTimeout)
+	}
+	timeout, err := time.ParseDuration(timeoutValue)
+	if err != nil {
+		return errors.Wrapf(err, "error parsing datamover timout")
+	}
+	interval := 5 * time.Second
+
+	err = wait.PollImmediate(interval, timeout, func() (bool, error) {
+		if volSnap.Spec.Source.PersistentVolumeClaimName == nil {
+			log.Infof("Waiting for volumesnapshot %s to have source PVC data. Retrying in %ds", volSnap.Name, interval/time.Second)
+			return false, nil
+		}
+		return true, nil
+	})
+
+	if err != nil {
+		if err == wait.ErrWaitTimeout {
+			log.Errorf("Timed out awaiting reconciliation of volumesnapshot %s", volSnap.Name)
+		}
+		return err
+	}
+	return nil
+}

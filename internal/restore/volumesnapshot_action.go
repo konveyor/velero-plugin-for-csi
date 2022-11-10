@@ -19,6 +19,7 @@ package restore
 import (
 	"context"
 	"fmt"
+
 	snapshotv1api "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -86,6 +87,11 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 
 		// Overwrite snaphandle if csi data-mover case is true
 		if util.DataMoverCase() {
+
+			err := util.WaitForVolumeSnapshotSourceToBeReady(&vs, p.Log)
+			if err != nil {
+				return nil, errors.WithStack(err)
+			}
 
 			vsrList, err := util.GetVolumeSnapshotRestoreWithStatusData(input.Restore.Name, *vs.Spec.Source.PersistentVolumeClaimName, p.Log)
 			if err != nil {
