@@ -18,6 +18,7 @@ package util
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1472,5 +1473,56 @@ func TestIsByBackup(t *testing.T) {
 	for _, tc := range testCases {
 		actual := HasBackupLabel(&tc.o, tc.backupName)
 		assert.Equal(t, tc.expected, actual)
+	}
+}
+
+func TestWaitForVolumeSnapshotToHaveSource(t *testing.T) {
+	var pvcName *string
+	stringPVCName := "test-pvc"
+	pvcName = &stringPVCName
+
+	errorMsg := errors.New("nil volumeSnapshot in WaitForVolumeSnapshotSourceToBeReady")
+
+	testCases := []struct {
+		name        string
+		volSnapshot *snapshotv1api.VolumeSnapshot
+		want        bool
+		wantErr     bool
+	}{
+		{
+			name:        "should error on nil volumesnapshot",
+			volSnapshot: nil,
+			want:        false,
+			wantErr:     true,
+		},
+		{
+			name: "should not error with volumesnapshot source PVC",
+			volSnapshot: &snapshotv1api.VolumeSnapshot{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "snapshot-1",
+					Namespace: "default",
+				},
+				Spec: snapshotv1api.VolumeSnapshotSpec{
+					Source: snapshotv1api.VolumeSnapshotSource{
+						PersistentVolumeClaimName: pvcName,
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := WaitForVolumeSnapshotSourceToBeReady(tc.volSnapshot, logrus.New().WithField("fake", "test"))
+			if actual != nil && tc.wantErr {
+				assert.EqualError(t, errorMsg, "nil volumeSnapshot in WaitForVolumeSnapshotSourceToBeReady")
+
+			}
+			if actual == nil && tc.want {
+				assert.Equal(t, nil, actual)
+			}
+		})
 	}
 }
