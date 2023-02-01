@@ -40,6 +40,7 @@ func main() {
 		RegisterRestoreItemAction("velero.io/csi-volumesnapshotcontent-restorer", newVolumeSnapshotContentRestoreItemAction).
 		RegisterDeleteItemAction("velero.io/csi-volumesnapshot-delete", newVolumeSnapshotDeleteItemAction).
 		RegisterDeleteItemAction("velero.io/csi-volumesnapshotcontent-delete", newVolumeSnapshotContentDeleteItemAction).
+		RegisterDeleteItemAction("velero.io/csi-volumesnapshotbackup-delete", newVolumeSnapshotBackupDeleteItemAction).
 		Serve()
 }
 
@@ -61,6 +62,10 @@ func newVolumeSnapContentBackupItemAction(logger logrus.FieldLogger) (interface{
 
 func newVolumeSnapshotBackupBackupItemAction(logger logrus.FieldLogger) (interface{}, error) {
 	return &backup.VolumeSnapshotBackupBackupItemAction{Log: logger}, nil
+}
+
+func newVolumeSnapshotBackupDeleteItemAction(logger logrus.FieldLogger) (interface{}, error) {
+	return &delete.VolumeSnapshotBackupDeleteItemAction{Log: logger}, nil
 }
 
 func newVolumeSnapshotRestoreRestoreItemAction(logger logrus.FieldLogger) (interface{}, error) {
