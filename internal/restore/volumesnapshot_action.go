@@ -62,6 +62,7 @@ func resetVolumeSnapshotAnnotation(vs *snapshotv1api.VolumeSnapshot) {
 // to recreate a volumesnapshotcontent object and statically bind the Volumesnapshot object being restored.
 func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActionExecuteInput) (*velero.RestoreItemActionExecuteOutput, error) {
 	p.Log.Info("Starting VolumeSnapshotRestoreItemAction")
+
 	var vs snapshotv1api.VolumeSnapshot
 
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(input.Item.UnstructuredContent(), &vs); err != nil {
@@ -88,6 +89,22 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 		csiDriverName, exists := vs.Annotations[util.CSIDriverNameAnnotation]
 		if !exists {
 			return nil, errors.Errorf("Volumesnapshot %s/%s does not have a %s annotation", vs.Namespace, vs.Name, util.CSIDriverNameAnnotation)
+		}
+
+		// if data mover is enabled, do not create VolumeSnapshotContent here
+		if util.DataMoverCase() {
+
+			vsMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&vs)
+			if err != nil {
+				return nil, errors.WithStack(err)
+			}
+
+			p.Log.Infof("Returning from VolumeSnapshotRestoreItemAction with no additionalItems")
+
+			return &velero.RestoreItemActionExecuteOutput{
+				UpdatedItem:     &unstructured.Unstructured{Object: vsMap},
+				AdditionalItems: []velero.ResourceIdentifier{},
+			}, nil
 		}
 
 		p.Log.Debugf("Set VolumeSnapshotContent %s/%s DeletionPolicy to Retain to make sure VS deletion in namespace will not delete Snapshot on cloud provider.",
