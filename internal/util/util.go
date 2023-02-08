@@ -19,8 +19,6 @@ package util
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -42,8 +40,6 @@ import (
 	"github.com/vmware-tanzu/velero/pkg/label"
 	"github.com/vmware-tanzu/velero/pkg/podvolume"
 )
-
-const VolumeSnapshotMoverEnv = "VOLUME_SNAPSHOT_MOVER"
 
 func GetPVForPVC(pvc *corev1api.PersistentVolumeClaim, corev1 corev1client.PersistentVolumesGetter) (*corev1api.PersistentVolume, error) {
 	if pvc.Spec.VolumeName == "" {
@@ -295,13 +291,4 @@ func HasBackupLabel(o *metav1.ObjectMeta, backupName string) bool {
 		return false
 	}
 	return o.Labels[velerov1api.BackupNameLabel] == label.GetValidName(backupName)
-}
-
-// We expect VolumeSnapshotMoverEnv to be set once when container is started.
-// When true, we will use the csi data-mover code path.
-var dataMoverCase, _ = strconv.ParseBool(os.Getenv(VolumeSnapshotMoverEnv))
-
-// DataMoverCase use getter to avoid changing bool in other packages
-func DataMoverCase() bool {
-	return dataMoverCase
 }
