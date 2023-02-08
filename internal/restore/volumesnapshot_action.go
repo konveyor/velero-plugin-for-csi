@@ -61,7 +61,6 @@ func resetVolumeSnapshotAnnotation(vs *snapshotv1api.VolumeSnapshot) {
 // Execute uses the data such as CSI driver name, storage snapshot handle, snapshot deletion secret (if any) from the annotations
 // to recreate a volumesnapshotcontent object and statically bind the Volumesnapshot object being restored.
 func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActionExecuteInput) (*velero.RestoreItemActionExecuteOutput, error) {
-	p.Log.Info("Starting VolumeSnapshotRestoreItemAction")
 
 	var vs snapshotv1api.VolumeSnapshot
 
