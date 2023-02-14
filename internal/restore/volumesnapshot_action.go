@@ -85,17 +85,8 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 	}
 
 	if !util.IsVolumeSnapshotExists(&vs, snapClient.SnapshotV1()) {
-		snapHandle, exists := vs.Annotations[util.VolumeSnapshotHandleAnnotation]
-		if !exists {
-			return nil, errors.Errorf("Volumesnapshot %s/%s does not have a %s annotation", vs.Namespace, vs.Name, util.VolumeSnapshotHandleAnnotation)
-		}
 
-		csiDriverName, exists := vs.Annotations[util.CSIDriverNameAnnotation]
-		if !exists {
-			return nil, errors.Errorf("Volumesnapshot %s/%s does not have a %s annotation", vs.Namespace, vs.Name, util.CSIDriverNameAnnotation)
-		}
-
-		// if data mover is enabled, do not create VolumeSnapshotContent here
+		// if data mover is enabled, let VSM plugin create volumeSnapshotContent
 		if util.DataMoverCase() {
 
 			vsMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&vs)
@@ -109,6 +100,16 @@ func (p *VolumeSnapshotRestoreItemAction) Execute(input *velero.RestoreItemActio
 				UpdatedItem:     &unstructured.Unstructured{Object: vsMap},
 				AdditionalItems: []velero.ResourceIdentifier{},
 			}, nil
+		}
+
+		snapHandle, exists := vs.Annotations[util.VolumeSnapshotHandleAnnotation]
+		if !exists {
+			return nil, errors.Errorf("Volumesnapshot %s/%s does not have a %s annotation", vs.Namespace, vs.Name, util.VolumeSnapshotHandleAnnotation)
+		}
+
+		csiDriverName, exists := vs.Annotations[util.CSIDriverNameAnnotation]
+		if !exists {
+			return nil, errors.Errorf("Volumesnapshot %s/%s does not have a %s annotation", vs.Namespace, vs.Name, util.CSIDriverNameAnnotation)
 		}
 
 		p.Log.Debugf("Set VolumeSnapshotContent %s/%s DeletionPolicy to Retain to make sure VS deletion in namespace will not delete Snapshot on cloud provider.",
