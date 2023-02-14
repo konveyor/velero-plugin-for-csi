@@ -44,6 +44,15 @@ func (p *VolumeSnapshotContentRestoreItemAction) AppliesTo() (velero.ResourceSel
 // Execute restores a volumesnapshotcontent object without modification returning the snapshot lister secret, if any, as
 // additional items to restore.
 func (p *VolumeSnapshotContentRestoreItemAction) Execute(input *velero.RestoreItemActionExecuteInput) (*velero.RestoreItemActionExecuteOutput, error) {
+
+	if util.DataMoverCase() {
+		p.Log.Info("Skipping VolumeSnapshotContentRestoreItemAction")
+
+		return &velero.RestoreItemActionExecuteOutput{
+			SkipRestore: true,
+		}, nil
+	}
+
 	p.Log.Info("Starting VolumeSnapshotContentRestoreItemAction")
 	var snapCont snapshotv1api.VolumeSnapshotContent
 
