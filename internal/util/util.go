@@ -266,7 +266,7 @@ func GetVolumeSnapshotContentForVolumeSnapshot(volSnap *snapshotv1api.VolumeSnap
 
 	if err != nil {
 		if err == wait.ErrWaitTimeout {
-			if snapshotContent.Status != nil && snapshotContent.Status.Error != nil {
+			if snapshotContent != nil && snapshotContent.Status != nil && snapshotContent.Status.Error != nil {
 				log.Errorf("Timed out awaiting reconciliation of volumesnapshot, Volumesnapshotcontent %s has error: %v", snapshotContent.Name, snapshotContent.Status.Error.Message)
 			} else {
 				log.Errorf("Timed out awaiting reconciliation of volumesnapshot %s/%s", volSnap.Namespace, volSnap.Name)
